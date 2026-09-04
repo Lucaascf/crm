@@ -1,0 +1,116 @@
+// Banco de dados do CRM de mudanças.
+// SQLite não suporta enums nativamente no Prisma, por isso status e tipos
+// são strings validadas em código (ver src/lib/constants.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  clients      Client[]
+  appointments Appointment[]
+  tasks        Task[]
+}
+
+model Client {
+  id     String @id @default(cuid())
+  name   String
+  whatsapp String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Mudança
+  originAddress      String?
+  destinationAddress String?
+  movingDate         DateTime?
+  movingTime         String?
+  propertyType       String?
+  movingNotes        String?
+
+  // Orçamento
+  budgetValue Float?
+  budgetNotes String?
+
+  // Negociação
+  status String @default("NOVO_CONTATO")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  historyEntries HistoryEntry[]
+  appointments   Appointment[]
+  tasks          Task[]
+
+  @@index([status])
+  @@index([movingDate])
+  @@index([userId])
+}
+
+model HistoryEntry {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+}
+
+model Appointment {
+  id   String @id @default(cuid())
+  title String
+  type  String // VISTORIA | MUDANCA | RETORNO | FOLLOWUP
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date  DateTime
+  time  String?
+  notes String?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([type])
+  @@index([clientId])
+  @@index([userId])
+}
+
+model Task {
+  id    String @id @default(cuid())
+  title String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date  DateTime
+  time  String?
+  notes String?
+  done  Boolean @default(false)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([done])
+  @@index([clientId])
+  @@index([userId])
+}
