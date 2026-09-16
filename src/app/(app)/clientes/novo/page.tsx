@@ -3,6 +3,7 @@ import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/app/actions/clients";
 import { PROPERTY_TYPES, STATUS_ORDER, STATUS } from "@/lib/constants";
 import { inputClass, labelClass, sectionClass, sectionTitleClass } from "@/lib/formStyles";
+import CurrencyInput from "@/components/CurrencyInput";
 
 export default function NovoClientePage() {
   return (
@@ -102,8 +103,30 @@ export default function NovoClientePage() {
             </select>
           </div>
           <div>
+            <label className={labelClass} htmlFor="stairsOrElevator">
+              Escada ou elevador (origem e destino)
+            </label>
+            <input
+              id="stairsOrElevator"
+              name="stairsOrElevator"
+              placeholder="Ex: origem sem elevador, destino tem"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="truckAccess">
+              Caminhão consegue parar na porta?
+            </label>
+            <input
+              id="truckAccess"
+              name="truckAccess"
+              placeholder="Ex: sim, nos dois endereços"
+              className={inputClass}
+            />
+          </div>
+          <div>
             <label className={labelClass} htmlFor="movingNotes">
-              Observações
+              Itens a transportar
             </label>
             <textarea
               id="movingNotes"
@@ -119,17 +142,9 @@ export default function NovoClientePage() {
           <h2 className={sectionTitleClass}>Orçamento</h2>
           <div>
             <label className={labelClass} htmlFor="budgetValue">
-              Valor do orçamento (R$)
+              Valor do orçamento
             </label>
-            <input
-              id="budgetValue"
-              name="budgetValue"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Ex: 1800"
-              className={inputClass}
-            />
+            <CurrencyInput name="budgetValue" defaultValue={null} className={inputClass} />
           </div>
           <div>
             <label className={labelClass} htmlFor="budgetNotes">

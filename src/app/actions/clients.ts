@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireUserId, assertOwnsClient } from "@/lib/auth";
+import { formatCurrency } from "@/lib/date";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -45,9 +46,12 @@ export async function createClient(formData: FormData) {
       movingTime: str(formData, "movingTime"),
       propertyType: str(formData, "propertyType"),
       movingNotes: str(formData, "movingNotes"),
+      stairsOrElevator: str(formData, "stairsOrElevator"),
+      truckAccess: str(formData, "truckAccess"),
       budgetValue: num(formData, "budgetValue"),
       budgetNotes: str(formData, "budgetNotes"),
       status: str(formData, "status") ?? "NOVO_CONTATO",
+      nameConfirmed: true,
       historyEntries: {
         create: { text: "Cliente cadastrado." },
       },
@@ -75,12 +79,15 @@ export async function updateClient(clientId: string, formData: FormData) {
     data: {
       name,
       whatsapp,
+      nameConfirmed: true,
       originAddress: str(formData, "originAddress"),
       destinationAddress: str(formData, "destinationAddress"),
       movingDate: dateOrNull(formData, "movingDate"),
       movingTime: str(formData, "movingTime"),
       propertyType: str(formData, "propertyType"),
       movingNotes: str(formData, "movingNotes"),
+      stairsOrElevator: str(formData, "stairsOrElevator"),
+      truckAccess: str(formData, "truckAccess"),
       budgetValue: num(formData, "budgetValue"),
       budgetNotes: str(formData, "budgetNotes"),
     },
@@ -90,6 +97,32 @@ export async function updateClient(clientId: string, formData: FormData) {
   revalidatePath("/clientes");
   revalidatePath("/funil");
   revalidatePath("/mudancas");
+  revalidatePath(`/clientes/${clientId}`);
+}
+
+// Ação rápida: só o valor do orçamento, sem precisar abrir o formulário
+// inteiro de edição. Se o bot já deixou o cliente esperando (awaitingBudget),
+// é esse valor que o whatsapp-bot detecta e manda pro cliente automaticamente.
+export async function setBudget(clientId: string, formData: FormData) {
+  const userId = requireUserId();
+  await assertOwnsClient(clientId, userId);
+
+  const value = num(formData, "budgetValue");
+  if (value === null) {
+    throw new Error("Informe um valor de orçamento.");
+  }
+
+  await prisma.client.update({
+    where: { id: clientId },
+    data: {
+      budgetValue: value,
+      historyEntries: { create: { text: `Orçamento de ${formatCurrency(value)} definido.` } },
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/clientes");
+  revalidatePath("/funil");
   revalidatePath(`/clientes/${clientId}`);
 }
 

@@ -144,7 +144,12 @@ export default async function ClientesPage({
                   <div className="md:w-32 shrink-0 font-semibold text-neutral-800">
                     {c.budgetValue ? formatCurrency(c.budgetValue) : "—"}
                   </div>
-                  <div className="shrink-0">
+                  <div className="shrink-0 flex items-center gap-2">
+                    {c.awaitingBudget && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5">
+                        ⏳ Só falta o orçamento
+                      </span>
+                    )}
                     <StatusBadge status={c.status} />
                   </div>
                 </Link>

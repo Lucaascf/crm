@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createHmac, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
@@ -40,9 +40,17 @@ function parseToken(token: string): { userId: string } | null {
 
 export function createUserSession(userId: string) {
   const expiresAt = Date.now() + SESSION_DURATION_MS;
+  // Cookie "Secure" só é aceito pelo navegador em HTTPS. Atrás do nginx
+  // hoje o site é servido em HTTP puro, então marcar sempre `secure: true`
+  // (baseado só em NODE_ENV) fazia o navegador descartar o cookie na hora
+  // e o login entrar num loop infinito. Usa o proto real da requisição
+  // (encaminhado pelo nginx) quando disponível, senão cai no NODE_ENV.
+  const forwardedProto = headers().get("x-forwarded-proto");
+  const isHttps = forwardedProto ? forwardedProto === "https" : process.env.NODE_ENV === "production";
+
   cookies().set(COOKIE_NAME, buildToken(userId, expiresAt), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps,
     sameSite: "lax",
     path: "/",
     expires: new Date(expiresAt),

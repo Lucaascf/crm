@@ -38,6 +38,8 @@ model Client {
   movingTime         String?
   propertyType       String?
   movingNotes        String?
+  stairsOrElevator   String? // escada ou elevador, na origem e no destino
+  truckAccess        String? // se o caminhão consegue parar na porta dos dois locais
 
   // Orçamento
   budgetValue Float?
@@ -46,16 +48,38 @@ model Client {
   // Negociação
   status String @default("NOVO_CONTATO")
 
+  // Bot do WhatsApp (ver whatsapp-bot/)
+  whatsappChatId   String?   @unique // id bruto do whatsapp-web.js (...@c.us ou ...@lid), usado pra mandar mensagem
+  awaitingBudget   Boolean   @default(false) // bot já coletou tudo, só falta o valor ser preenchido no site
+  budgetSentAt     DateTime? // quando o bot mandou o orçamento pro cliente
+  nameConfirmed    Boolean   @default(false) // true quando o próprio cliente confirmou o nome completo na conversa (não é só o nome salvo no WhatsApp)
+  vistoriaResolved Boolean   @default(false) // true quando o bot já perguntou sobre vistoria e o cliente respondeu (agendou ou preferiu mandar fotos)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   historyEntries HistoryEntry[]
   appointments   Appointment[]
   tasks          Task[]
+  messages       Message[]
 
   @@index([status])
   @@index([movingDate])
   @@index([userId])
+}
+
+model Message {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  direction   String // "IN" | "OUT"
+  text        String
+  waMessageId String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
 }
 
 model HistoryEntry {
@@ -85,6 +109,12 @@ model Appointment {
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
+
+  // Confirmação de vistoria com o bot (ver whatsapp-bot/) — só usado quando type = VISTORIA
+  confirmedByUser   Boolean   @default(false) // o usuário logado confirmou que esse dia/horário funciona
+  proposalSentAt    DateTime? // quando o bot mandou a proposta desse horário pro cliente
+  clientRespondedAt DateTime? // quando a resposta do cliente foi processada
+  clientAccepted    Boolean? // null = sem resposta ainda, true = aceitou, false = pediu outro horário
 
   @@index([date])
   @@index([type])

@@ -146,7 +146,9 @@ export default async function Home() {
                 subtitle={
                   c.budgetValue
                     ? `Orçamento: ${formatCurrency(c.budgetValue)}`
-                    : "Ainda sem valor de orçamento"
+                    : c.awaitingBudget
+                      ? "⏳ Só falta o orçamento"
+                      : "Ainda em atendimento"
                 }
               />
             ))}

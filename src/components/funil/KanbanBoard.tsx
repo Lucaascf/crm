@@ -13,6 +13,7 @@ type Client = {
   destinationAddress: string | null;
   movingDate: Date | null;
   budgetValue: number | null;
+  awaitingBudget: boolean;
   nextTask: { title: string; date: Date; time: string | null } | null;
 };
 
@@ -137,6 +138,11 @@ function ClientCard({
     <div className="rounded-xl border border-neutral-200 bg-white p-3">
       <Link href={`/clientes/${c.id}`} className="block mb-2">
         <p className="font-semibold text-neutral-900 leading-tight">{c.name}</p>
+        {c.awaitingBudget && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5 mt-1">
+            ⏳ Só falta o orçamento
+          </span>
+        )}
         {(c.originAddress || c.destinationAddress) && (
           <p className="text-xs text-neutral-500 mt-0.5 truncate">
             {c.originAddress ?? "?"} → {c.destinationAddress ?? "?"}

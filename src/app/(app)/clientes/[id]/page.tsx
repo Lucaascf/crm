@@ -8,6 +8,7 @@ import { addHistoryEntry } from "@/app/actions/clients";
 import { createTask } from "@/app/actions/tasks";
 import StatusPicker from "@/components/client/StatusPicker";
 import EditableInfo from "@/components/client/EditableInfo";
+import VistoriaCard from "@/components/client/VistoriaCard";
 import TaskCheckbox from "@/components/TaskCheckbox";
 import { inputClass } from "@/lib/formStyles";
 
@@ -29,10 +30,17 @@ export default async function ClienteDetailPage({
     include: {
       historyEntries: { orderBy: { createdAt: "desc" } },
       tasks: { orderBy: [{ done: "asc" }, { date: "asc" }] },
+      appointments: {
+        where: { type: "VISTORIA" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
   });
 
   if (!client) notFound();
+
+  const vistoria = client.appointments[0] ?? null;
 
   const addHistory = addHistoryEntry.bind(null, client.id);
 
@@ -69,6 +77,8 @@ export default async function ClienteDetailPage({
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-5">
             <EditableInfo client={client} />
           </div>
+
+          {vistoria && <VistoriaCard vistoria={vistoria} />}
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-5">
             <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">
