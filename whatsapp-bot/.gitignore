@@ -1,0 +1,8 @@
+node_modules/
+auth_info/
+chrome_test_auth/
+.wwebjs_cache/
+exemplos/
+.env
+*.log
+index.js.bak-*
