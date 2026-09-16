@@ -1,5 +1,6 @@
 node_modules/
 auth_info/
+auth_info.old-*/
 chrome_test_auth/
 .wwebjs_cache/
 exemplos/

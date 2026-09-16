@@ -14,11 +14,14 @@ const logPage = (line) => {
 // é só a lib observando um framenavigated para "post_logout=1" (ver
 // node_modules/whatsapp-web.js/src/Client.js linha ~496) — o motivo real
 // do servidor derrubar a sessão só aparece aqui, não no evento 'disconnected'.
+let pupPage = null
+
 async function attachPageDiagnostics() {
   while (!client.pupPage) {
     await new Promise((r) => setTimeout(r, 200))
   }
   const page = client.pupPage
+  pupPage = page
 
   page.on('console', (msg) => {
     logPage(`[console:${msg.type()}] ${msg.text()}`)
@@ -40,7 +43,10 @@ async function attachPageDiagnostics() {
 
 // Enquanto testamos, o bot só pode ler/responder esse contato — o WhatsApp
 // conectado é o número real da empresa, usado por clientes de verdade.
-const ALLOWED_CONTACT = '5571993341731@c.us'
+// Aceita os dois formatos: o LID observado de verdade em produção hoje
+// (mensagens chegam como @lid, não @c.us) e o número/telefone tradicional,
+// por segurança, caso o formato varie.
+const ALLOWED_CONTACTS = ['226289076203642@lid', '5571993341731@c.us']
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: 'auth_info' }),
@@ -74,11 +80,46 @@ client.on('authenticated', () => {
   console.log(`[${new Date().toISOString()}] 🔐 Autenticado — sessão aceita, iniciando sincronização`)
 })
 
+// A sessão já ficou presa em "Loading your chats..." depois do
+// loading_screen chegar a 100% sem nunca disparar 'ready' — foi reproduzido
+// e confirmado num teste manual, e um reload da página destravou na hora.
+// Aqui automatizamos isso: se não sincronizar em STUCK_TIMEOUT_MS depois do
+// 100%, recarregamos a página sozinhos (bem antes do LOGOUT de ~3min06s
+// que essa mesma sessão travada costumava sofrer).
+const STUCK_TIMEOUT_MS = 90_000
+const MAX_RELOAD_ATTEMPTS = 2
+let readyFired = false
+let stuckTimerArmed = false
+let reloadAttempts = 0
+
 client.on('loading_screen', (percent, message) => {
   console.log(`[${new Date().toISOString()}] ⏳ Carregando: ${percent}% - ${message}`)
+
+  if (Number(percent) !== 100 || stuckTimerArmed) return
+  stuckTimerArmed = true
+
+  setTimeout(async () => {
+    if (readyFired) return
+    if (!pupPage) return
+
+    if (reloadAttempts >= MAX_RELOAD_ATTEMPTS) {
+      console.log(`[${new Date().toISOString()}] ⚠️ ${MAX_RELOAD_ATTEMPTS} reloads esgotados sem sincronizar — parando de tentar (não vou mascarar com loop infinito)`)
+      return
+    }
+
+    reloadAttempts++
+    console.log(`[${new Date().toISOString()}] ⚠️ Travado em 100% há ${STUCK_TIMEOUT_MS / 1000}s sem 'ready' — recarregando página (tentativa ${reloadAttempts}/${MAX_RELOAD_ATTEMPTS})`)
+    try {
+      await pupPage.reload({ waitUntil: 'load' })
+      stuckTimerArmed = false // permite rearmar se travar em 100% de novo após o reload
+    } catch (err) {
+      console.log(`[${new Date().toISOString()}] ❌ Falha ao recarregar: ${err.message}`)
+    }
+  }, STUCK_TIMEOUT_MS)
 })
 
 client.on('ready', () => {
+  readyFired = true
   console.log('✅ Conectado ao WhatsApp!')
 })
 
@@ -92,9 +133,26 @@ client.on('disconnected', async (reason) => {
   process.exit(1)
 })
 
+// handleSIGINT/SIGTERM/SIGHUP ficam false (acima) de propósito — evita dois
+// handlers (o do Puppeteer e o nosso) tentando fechar o Chrome ao mesmo
+// tempo, o que deixa a sessão suja. Esse é o ÚNICO ponto que fecha o
+// Chromium ao receber um sinal, garantindo que matar o processo Node
+// também mata o Chromium filho, sem órfão.
+const shutdown = async (signal) => {
+  console.log(`[${new Date().toISOString()}] ${signal} recebido — encerrando Chromium de forma limpa...`)
+  try {
+    await client.destroy()
+  } catch (err) {
+    console.log(`[${new Date().toISOString()}] Falha ao encerrar Chromium: ${err.message}`)
+  }
+  process.exit(0)
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
 client.on('message', async (msg) => {
   if (msg.fromMe) return
-  if (msg.from !== ALLOWED_CONTACT) return // ignora qualquer outro contato (clientes reais)
+  if (!ALLOWED_CONTACTS.includes(msg.from)) return // ignora qualquer outro contato (clientes reais)
 
   console.log(`📩 Mensagem de ${msg.from}: ${msg.body}`)
   if (msg.body) {
