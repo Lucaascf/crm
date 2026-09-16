@@ -8,6 +8,13 @@ const logPage = (line) => {
   fs.appendFileSync(WAWEB_CONSOLE_LOG, `[${new Date().toISOString()}] ${line}\n`)
 }
 
+// Sem isso, uma promise sem .catch() (ex: msg.reply() falhando por uma
+// instabilidade de rede) derruba o processo inteiro sem deixar rastro no
+// log — o systemd sobe de novo (Restart=always), mas sem saber o motivo.
+process.on('unhandledRejection', (err) => {
+  console.log(`[${new Date().toISOString()}] ⚠️ Promise rejeitada sem tratamento: ${err?.message ?? err}`)
+})
+
 // Anexa aos eventos da PÁGINA (não do client whatsapp-web.js) assim que o
 // Puppeteer expõe pupPage — para capturar o que o WhatsApp Web realmente
 // loga/falha entre o loading_screen:100% e o LOGOUT, já que o LOGOUT em si
