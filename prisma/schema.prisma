@@ -56,6 +56,12 @@ model Client {
   vistoriaType     String? // "presencial" | "fotos" — o que o cliente escolheu
   collectingVistoriaMedia Boolean @default(false) // true enquanto o bot espera o cliente terminar de mandar fotos/vídeos da vistoria
 
+  // Handoff humano (ver whatsapp-bot/src/clientState.js): timestamp da
+  // última mensagem enviada por um operador humano (não pelo bot) nesse
+  // atendimento. Enquanto estiver dentro do cooldown de inatividade, o bot
+  // processa mensagens (extração/CRM) mas não responde automaticamente.
+  lastHumanMessageAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -75,7 +81,7 @@ model Message {
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  direction   String // "IN" | "OUT"
+  direction   String // "IN" (cliente) | "OUT" (bot, automático) | "OUT_HUMAN" (operador humano, manual)
   text        String
   waMessageId String? @unique
 

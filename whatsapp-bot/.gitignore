@@ -7,3 +7,7 @@ exemplos/
 .env
 *.log
 index.js.bak-*
+
+# dados reais de clientes (export do WhatsApp e resultados de baterias com IA real)
+export/
+test/battery/out/

@@ -6,6 +6,42 @@ const OWNER_EMAIL = 'luciano'
 
 const isEmpty = (value) => value === null || value === undefined || value === ''
 
+// Decisão de produto (confirmada com o Lucas em 2026-09-17): depois que um
+// humano manda uma mensagem manualmente, o bot fica em silêncio (não gera
+// nem envia resposta automática) por HUMAN_HANDOFF_COOLDOWN_MS de
+// inatividade DO HUMANO. Se o humano mandar outra mensagem, o cooldown
+// reinicia. Se o cooldown expirar sem nova mensagem humana, a PRÓXIMA
+// mensagem do cliente já é respondida normalmente pelo bot — não existe
+// reativação automática "no meio" do cooldown, nem botão manual de reversão
+// nesta entrega.
+export const HUMAN_HANDOFF_COOLDOWN_MS = 2 * 60 * 60 * 1000 // 2 horas
+
+// Handoff persiste em Client.lastHumanMessageAt (banco) — não em memória —
+// então sobrevive a reinícios do processo do bot (ver relatório, seção
+// "Reinício do processo").
+export function isHumanHandoffActive(client) {
+  if (!client.lastHumanMessageAt) return false
+  return Date.now() - new Date(client.lastHumanMessageAt).getTime() < HUMAN_HANDOFF_COOLDOWN_MS
+}
+
+/**
+ * Reconfirma com dado FRESCO do banco que ainda é seguro mandar uma
+ * resposta automática — chamar de novo bem antes de qualquer
+ * sendAndRecord, depois de qualquer chamada de IA (que pode levar
+ * segundos). Sem isso, um turno que começou a decidir com handoffActive
+ * ainda false pode acabar mandando mensagem DEPOIS que uma mensagem humana
+ * chegou e ativou o handoff no meio do processamento — a extração/geração
+ * de resposta não é instantânea, e o handoff é justamente sobre reagir a
+ * eventos que podem acontecer enquanto isso roda. Encontrado na prática
+ * rodando a bateria de teste com a API real (com latência de verdade); o
+ * mock nunca expôs isso por responder rápido demais pra dar tempo de uma
+ * corrida acontecer.
+ */
+export async function isSafeToAutoReply(clientId) {
+  const fresh = await prisma.client.findUnique({ where: { id: clientId } })
+  return Boolean(fresh) && !isHumanHandoffActive(fresh)
+}
+
 // stairsOrElevator/truckAccess vêm da IA no formato "Origem: X. Destino: Y.",
 // e quando um dos dois lados ficou ambíguo/não respondido ela escreve
 // explicitamente "ainda não informado" em vez de adivinhar (ver ai.js) — um
@@ -69,25 +105,73 @@ export async function findOrCreateClient({ whatsappChatId, phoneNumber, contactN
   }
 
   const userId = await getOwnerUserId()
-  return prisma.client.create({
-    data: {
-      userId,
-      // Nome do WhatsApp é só um placeholder inicial — o bot pede o nome de
-      // verdade na conversa e marca nameConfirmed quando o cliente confirma.
-      name: contactName || phoneNumber || whatsappChatId,
-      whatsapp: phoneNumber || whatsappChatId,
-      whatsappChatId,
-      status: 'NOVO_CONTATO',
-      historyEntries: {
-        create: { text: 'Cliente cadastrado automaticamente pelo bot do WhatsApp.' },
+  try {
+    return await prisma.client.create({
+      data: {
+        userId,
+        // Nome do WhatsApp é só um placeholder inicial — o bot pede o nome de
+        // verdade na conversa e marca nameConfirmed quando o cliente confirma.
+        name: contactName || phoneNumber || whatsappChatId,
+        whatsapp: phoneNumber || whatsappChatId,
+        whatsappChatId,
+        status: 'NOVO_CONTATO',
+        historyEntries: {
+          create: { text: 'Cliente cadastrado automaticamente pelo bot do WhatsApp.' },
+        },
       },
-    },
-  })
+    })
+  } catch (err) {
+    // Corrida: duas mensagens do mesmo chat novo (ex: cliente e humano quase
+    // juntos) passaram pelo findUnique acima antes de qualquer uma criar o
+    // Client — a segunda esbarra na constraint única de whatsappChatId.
+    // Em vez de derrubar o processamento dessa mensagem, busca o registro
+    // que a outra chamada acabou de criar.
+    if (err.code === 'P2002') {
+      const race = await prisma.client.findUnique({ where: { whatsappChatId } })
+      if (race) return race
+    }
+    throw err
+  }
 }
+
+export function isDuplicateWaMessageError(err) {
+  return err?.code === 'P2002'
+}
+
+// waMessageId de mensagens que O PRÓPRIO BOT mandou (via sendAndRecord em
+// index.js, budgetWatcher.js ou vistoriaWatcher.js — os três pontos que
+// mandam mensagem automática) — compartilhado entre eles porque
+// whatsapp-web.js ecoa toda mensagem enviada pela conta de volta como
+// evento 'message_create' com fromMe=true, e sem isso o handler principal
+// (em index.js) confundiria a própria mensagem do bot com uma intervenção
+// humana. Serve só de atalho rápido; a defesa definitiva contra a corrida é
+// a constraint única de waMessageId no banco (ver isDuplicateWaMessageError).
+export const botSentMessageIds = new Set()
 
 export async function recordMessage(clientId, direction, text, waMessageId = null) {
   return prisma.message.create({
     data: { clientId, direction, text, waMessageId },
+  })
+}
+
+/**
+ * Envia uma mensagem automática do bot e registra no CRM, marcando o
+ * waMessageId em botSentMessageIds pra o handler de mensagens (index.js)
+ * não confundir o eco dessa mensagem com uma intervenção humana. Usado
+ * pelos três lugares que mandam mensagem automática: o handler principal
+ * (index.js), budgetWatcher.js e vistoriaWatcher.js.
+ */
+export async function sendAndRecord(waClient, whatsappChatId, clientId, text) {
+  const sent = await waClient.sendMessage(whatsappChatId, text)
+  const waMessageId = sent?.id?._serialized ?? null
+  if (waMessageId) botSentMessageIds.add(waMessageId)
+  await recordMessage(clientId, 'OUT', text, waMessageId)
+}
+
+export async function markHumanHandoff(clientId) {
+  return prisma.client.update({
+    where: { id: clientId },
+    data: { lastHumanMessageAt: new Date() },
   })
 }
 

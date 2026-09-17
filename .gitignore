@@ -39,3 +39,5 @@ next-env.d.ts
 # banco de dados local (dados reais dos clientes)
 /prisma/dev.db
 /prisma/dev.db-journal
+/dev.db
+/dev.db-journal

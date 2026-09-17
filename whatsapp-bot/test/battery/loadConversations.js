@@ -1,0 +1,53 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+export const EXPORT_DIR = path.resolve(__dirname, '../../export')
+
+/**
+ * Carrega as 383 conversas reais exportadas (export/*.json — formato
+ * {contato, mensagens: [{remetente: "Cliente"|"Operador", texto, timestamp}]})
+ * e devolve uma lista normalizada, ordenada por timestamp, filtrando
+ * mensagens sem texto (ex: figurinha/mídia sem legenda no export original —
+ * resolveMessageText() no bot real também descartaria essas, já que
+ * msg.body viria vazio e hasMedia não é reproduzível a partir do JSON).
+ */
+export function loadConversations() {
+  const files = fs.readdirSync(EXPORT_DIR).filter((f) => f.endsWith('.json'))
+  return files.map((file) => {
+    const raw = JSON.parse(fs.readFileSync(path.join(EXPORT_DIR, file), 'utf8'))
+    const messages = (raw.mensagens || [])
+      .filter((m) => m.texto && m.texto.trim() !== '')
+      .map((m) => ({
+        fromMe: m.remetente === 'Operador',
+        text: m.texto,
+        timestamp: new Date(m.timestamp).getTime(),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp)
+
+    return { file, contato: raw.contato, messages }
+  })
+}
+
+/**
+ * Agrupa mensagens consecutivas do MESMO remetente (cliente OU operador)
+ * num "turno" — simplificação deliberada do debounce real (que agrupa por
+ * silêncio de 3s/60s, ver src/conversationHandler.js): pra bateria de
+ * comportamento em massa, o que importa é testar handoff/CRM/supressão de
+ * resposta quando o remetente muda, não reproduzir o timing exato do
+ * debounce (lógica pré-existente, não alterada nesta entrega). Documentado
+ * no relatório como simplificação metodológica.
+ */
+export function groupIntoTurns(messages) {
+  const turns = []
+  for (const msg of messages) {
+    const last = turns[turns.length - 1]
+    if (last && last.fromMe === msg.fromMe) {
+      last.messages.push(msg)
+    } else {
+      turns.push({ fromMe: msg.fromMe, messages: [msg] })
+    }
+  }
+  return turns
+}

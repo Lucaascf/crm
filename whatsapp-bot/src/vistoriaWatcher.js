@@ -1,5 +1,5 @@
 import { prisma } from './db.js'
-import { recordMessage } from './clientState.js'
+import { sendAndRecord } from './clientState.js'
 
 const POLL_INTERVAL_MS = 8_000
 
@@ -36,8 +36,7 @@ export function startVistoriaWatcher(waClient) {
       if (!chatId) continue
       try {
         const text = buildProposalMessage(appointment)
-        await waClient.sendMessage(chatId, text)
-        await recordMessage(appointment.clientId, 'OUT', text)
+        await sendAndRecord(waClient, chatId, appointment.clientId, text)
         await prisma.appointment.update({
           where: { id: appointment.id },
           data: { proposalSentAt: new Date() },

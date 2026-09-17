@@ -1,5 +1,5 @@
 import { prisma } from './db.js'
-import { recordMessage } from './clientState.js'
+import { sendAndRecord } from './clientState.js'
 
 // Intervalo de checagem — não precisa ser em tempo real, mas o site mostra
 // "mandando em instantes" assim que o Luciano salva, então mantemos curto.
@@ -41,8 +41,7 @@ export function startBudgetWatcher(waClient) {
       if (!client.whatsappChatId) continue
       try {
         const text = buildBudgetMessage(client)
-        await waClient.sendMessage(client.whatsappChatId, text)
-        await recordMessage(client.id, 'OUT', text)
+        await sendAndRecord(waClient, client.whatsappChatId, client.id, text)
         await prisma.client.update({
           where: { id: client.id },
           data: {
