@@ -15,7 +15,7 @@ export default async function MudancasPage() {
   const [upcoming, past] = await Promise.all([
     prisma.client.findMany({
       where: { userId, movingDate: { gte: today } },
-      orderBy: [{ movingDate: "asc" }, { movingTime: "asc" }],
+      orderBy: { movingDate: "asc" },
     }),
     prisma.client.findMany({
       where: { userId, movingDate: { lt: today } },
@@ -84,7 +84,6 @@ function MoveCard({
     originAddress: string | null;
     destinationAddress: string | null;
     movingDate: Date | null;
-    movingTime: string | null;
     movingNotes: string | null;
     status: string;
   };
@@ -109,7 +108,6 @@ function MoveCard({
         </div>
         <div className="flex items-center gap-3 text-sm text-neutral-500">
           <span>📅 {c.movingDate ? formatDate(c.movingDate) : "—"}</span>
-          {c.movingTime && <span>🕐 {c.movingTime}</span>}
         </div>
         {c.movingNotes && <p className="text-sm text-neutral-500">{c.movingNotes}</p>}
       </Link>

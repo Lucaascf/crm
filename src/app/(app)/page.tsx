@@ -185,7 +185,6 @@ export default async function Home() {
                 href={`/clientes/${c.id}`}
                 title={c.name}
                 subtitle={`${c.originAddress ?? "?"} → ${c.destinationAddress ?? "?"}`}
-                time={c.movingTime}
               />
             ))}
           </TodaySection>

@@ -43,7 +43,6 @@ export async function createClient(formData: FormData) {
       originAddress: str(formData, "originAddress"),
       destinationAddress: str(formData, "destinationAddress"),
       movingDate: dateOrNull(formData, "movingDate"),
-      movingTime: str(formData, "movingTime"),
       propertyType: str(formData, "propertyType"),
       movingNotes: str(formData, "movingNotes"),
       stairsOrElevator: str(formData, "stairsOrElevator"),
@@ -83,7 +82,6 @@ export async function updateClient(clientId: string, formData: FormData) {
       originAddress: str(formData, "originAddress"),
       destinationAddress: str(formData, "destinationAddress"),
       movingDate: dateOrNull(formData, "movingDate"),
-      movingTime: str(formData, "movingTime"),
       propertyType: str(formData, "propertyType"),
       movingNotes: str(formData, "movingNotes"),
       stairsOrElevator: str(formData, "stairsOrElevator"),
@@ -171,6 +169,23 @@ export async function addHistoryEntry(clientId: string, formData: FormData) {
   });
 
   revalidatePath(`/clientes/${clientId}`);
+}
+
+// Apaga o cliente e tudo ligado a ele (mensagens e histórico da conversa —
+// ver onDelete: Cascade no schema). Compromissos e tarefas ficam, só perdem
+// o vínculo. Se o número mandar mensagem de novo, o bot trata como contato
+// novo, sem nenhuma lembrança da conversa anterior.
+export async function deleteClient(clientId: string) {
+  const userId = requireUserId();
+  await assertOwnsClient(clientId, userId);
+
+  await prisma.client.delete({ where: { id: clientId } });
+
+  revalidatePath("/");
+  revalidatePath("/clientes");
+  revalidatePath("/funil");
+  revalidatePath("/mudancas");
+  redirect("/clientes");
 }
 
 export async function searchClients(query: string) {

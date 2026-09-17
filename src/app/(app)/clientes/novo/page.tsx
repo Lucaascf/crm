@@ -73,19 +73,11 @@ export default function NovoClientePage() {
               className={inputClass}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass} htmlFor="movingDate">
-                Data da mudança
-              </label>
-              <input id="movingDate" name="movingDate" type="date" className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass} htmlFor="movingTime">
-                Horário
-              </label>
-              <input id="movingTime" name="movingTime" type="time" className={inputClass} />
-            </div>
+          <div>
+            <label className={labelClass} htmlFor="movingDate">
+              Data da mudança
+            </label>
+            <input id="movingDate" name="movingDate" type="date" className={inputClass} />
           </div>
           <div>
             <label className={labelClass} htmlFor="propertyType">

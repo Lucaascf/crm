@@ -9,6 +9,7 @@ import { createTask } from "@/app/actions/tasks";
 import StatusPicker from "@/components/client/StatusPicker";
 import EditableInfo from "@/components/client/EditableInfo";
 import VistoriaCard from "@/components/client/VistoriaCard";
+import DeleteClientButton from "@/components/client/DeleteClientButton";
 import TaskCheckbox from "@/components/TaskCheckbox";
 import { inputClass } from "@/lib/formStyles";
 
@@ -35,6 +36,7 @@ export default async function ClienteDetailPage({
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      mediaFiles: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -68,7 +70,10 @@ export default async function ClienteDetailPage({
               {client.whatsapp}
             </a>
           </div>
-          <StatusPicker clientId={client.id} status={client.status} />
+          <div className="flex items-center gap-2">
+            <StatusPicker clientId={client.id} status={client.status} />
+            <DeleteClientButton id={client.id} name={client.name} />
+          </div>
         </div>
       </div>
 
@@ -79,6 +84,36 @@ export default async function ClienteDetailPage({
           </div>
 
           {vistoria && <VistoriaCard vistoria={vistoria} />}
+
+          {client.mediaFiles.length > 0 && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-5">
+              <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">
+                Fotos e vídeos da vistoria ({client.mediaFiles.length})
+              </p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {client.mediaFiles.map((m) => (
+                  <a
+                    key={m.id}
+                    href={m.filePath}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block aspect-square overflow-hidden rounded-xl bg-neutral-100 border border-neutral-200"
+                  >
+                    {m.type === "video" ? (
+                      <video src={m.filePath} className="w-full h-full object-cover" muted />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={m.filePath}
+                        alt={m.caption ?? "Foto enviada pelo cliente"}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-5">
             <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">

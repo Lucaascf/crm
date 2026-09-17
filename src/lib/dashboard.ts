@@ -38,7 +38,7 @@ export async function getDashboardData(userId: string) {
     }),
     prisma.client.findMany({
       where: { userId, movingDate: { gte: today, lt: tomorrow } },
-      orderBy: { movingTime: "asc" },
+      orderBy: { movingDate: "asc" },
     }),
     prisma.client.findMany({
       where: { userId, status: { in: ["EM_ATENDIMENTO", "ORCAMENTO_ENVIADO"] } },

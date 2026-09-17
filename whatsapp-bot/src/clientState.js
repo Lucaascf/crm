@@ -6,21 +6,34 @@ const OWNER_EMAIL = 'luciano'
 
 const isEmpty = (value) => value === null || value === undefined || value === ''
 
-// Campos que bloqueiam o "pronto pra orçar". movingTime fica de fora de
-// propósito: nas conversas reais analisadas, o horário exato do dia raramente
-// é combinado nessa fase — só a data.
+// stairsOrElevator/truckAccess vêm da IA no formato "Origem: X. Destino: Y.",
+// e quando um dos dois lados ficou ambíguo/não respondido ela escreve
+// explicitamente "ainda não informado" em vez de adivinhar (ver ai.js) — um
+// campo com esse texto não conta como resolvido, tem que voltar pra lista de
+// perguntas até o cliente confirmar os dois lados.
+const isFullyConfirmed = (value) => !isEmpty(value) && !value.toLowerCase().includes('ainda não informado')
+
+// Campos que bloqueiam o "pronto pra orçar".
 export const REQUIRED_FIELDS = [
   { key: 'nameConfirmed', label: 'nome completo do cliente', check: (c) => c.nameConfirmed === true },
   { key: 'originAddress', label: 'endereço de origem' },
   { key: 'destinationAddress', label: 'endereço de destino' },
   { key: 'propertyType', label: 'tipo de imóvel (apartamento, casa, etc)' },
   { key: 'movingNotes', label: 'relação dos itens que serão transportados' },
-  { key: 'stairsOrElevator', label: 'se há escada ou elevador na origem e no destino' },
-  { key: 'truckAccess', label: 'se o caminhão consegue parar na porta dos dois locais' },
+  {
+    key: 'stairsOrElevator',
+    label: 'se há escada ou elevador na origem e no destino',
+    check: (c) => isFullyConfirmed(c.stairsOrElevator),
+  },
+  {
+    key: 'truckAccess',
+    label: 'se o caminhão consegue parar na porta dos dois locais',
+    check: (c) => isFullyConfirmed(c.truckAccess),
+  },
   { key: 'movingDate', label: 'data prevista da mudança' },
   {
     key: 'vistoriaResolved',
-    label: 'se quer agendar uma vistoria (presencial ou por vídeo) ou prefere só mandar fotos e a lista',
+    label: 'se quer uma vistoria presencial ou prefere mandar fotos e vídeo dos itens',
     check: (c) => c.vistoriaResolved === true,
   },
 ]

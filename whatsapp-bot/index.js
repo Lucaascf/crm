@@ -4,7 +4,7 @@ const { Client, LocalAuth } = pkg
 import qrcode from 'qrcode-terminal'
 import { prisma } from './src/db.js'
 import { findOrCreateClient, recordMessage, getConversationHistory, getMissingRequiredFields } from './src/clientState.js'
-import { extractClientInfo, generateReply, classifyVistoriaResponse } from './src/ai.js'
+import { extractClientInfo, extractMovingDate, generateReply, classifyVistoriaResponse, classifyMediaSubmissionComplete } from './src/ai.js'
 import { startBudgetWatcher } from './src/budgetWatcher.js'
 import { startVistoriaWatcher } from './src/vistoriaWatcher.js'
 import { debounce } from './src/debounce.js'
@@ -59,7 +59,7 @@ async function attachPageDiagnostics() {
 // empresa, usado por clientes de verdade. Aceita os dois formatos: o LID
 // observado de verdade em produção hoje (mensagens chegam como @lid, não
 // @c.us) e o número/telefone tradicional, por segurança, caso o formato varie.
-const TEST_CONTACTS = ['226289076203642@lid', '5571993341731@c.us']
+const TEST_CONTACTS = ['226289076203642@lid', '5571993341731@c.us', '245196008771798@lid', '275719838019588@lid', '1172609974471@lid']
 // Liberar pra clientes reais é uma decisão separada da implementação —
 // só vira true depois de validar o fluxo completo no contato de teste.
 const BOT_ENABLED_FOR_ALL = process.env.BOT_ENABLED_FOR_ALL === 'true'
@@ -67,7 +67,19 @@ const BOT_ENABLED_FOR_ALL = process.env.BOT_ENABLED_FOR_ALL === 'true'
 // Depois de quanto tempo de silêncio do cliente o bot processa a conversa —
 // agrupa mensagens que chegam em rajada (comum em conversas reais) em vez de
 // reagir a cada linha isolada.
-const REPLY_DEBOUNCE_MS = 10_000
+const REPLY_DEBOUNCE_MS = 3_000
+
+// Enquanto o cliente está mandando fotos/vídeo da vistoria, esperamos mais
+// antes de perguntar "tem mais alguma coisa?" — 3s cortaria no meio de uma
+// rajada de mídia (cliente manda várias fotos, uma de cada vez).
+const VISTORIA_MEDIA_DEBOUNCE_MS = 60 * 1000
+
+const READY_FOR_BUDGET_MESSAGE = 'Perfeito, já tenho tudo que preciso! Vou repassar pra nossa equipe calcular o valor certinho e já te retorno por aqui.'
+const VISTORIA_PRESENCIAL_MESSAGE = 'Show! Um assistente vai entrar em contato pra marcar o dia e horário da vistoria.'
+const VISTORIA_FOTOS_REQUEST_MESSAGE = 'Beleza! Pode mandar as fotos e vídeos de tudo que vai ser transportado, por favor.'
+const VISTORIA_MEDIA_MORE_QUESTION = 'Tem mais alguma coisa que você queira mandar, ou é só isso?'
+const VISTORIA_MEDIA_DONE_MESSAGE = 'Combinado! Vou avaliar as fotos e vídeos com a equipe e te dou um retorno.'
+const ITEMS_FOLLOWUP_QUESTION = 'Tem mais alguma coisa que você vai levar, ou é só isso?'
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: 'auth_info' }),
@@ -107,7 +119,7 @@ client.on('authenticated', () => {
 // Aqui automatizamos isso: se não sincronizar em STUCK_TIMEOUT_MS depois do
 // 100%, recarregamos a página sozinhos (bem antes do LOGOUT de ~3min06s
 // que essa mesma sessão travada costumava sofrer).
-const STUCK_TIMEOUT_MS = 90_000
+const STUCK_TIMEOUT_MS = 30_000
 const MAX_RELOAD_ATTEMPTS = 2
 let readyFired = false
 let stuckTimerArmed = false
@@ -173,6 +185,11 @@ const shutdown = async (signal) => {
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
+async function sendAndRecord(whatsappChatId, clientId, text) {
+  await client.sendMessage(whatsappChatId, text)
+  await recordMessage(clientId, 'OUT', text)
+}
+
 // Áudio (.opus) fica fora de escopo — não transcrevemos. Foto/vídeo/
 // documento a gente não analisa o conteúdo, mas ainda registra que chegou,
 // pra IA não ficar pedindo de novo algo que o cliente já mandou.
@@ -214,37 +231,6 @@ async function persistIncomingMessage(msg, text) {
   })
   await recordMessage(clientRecord.id, 'IN', text, msg.id?._serialized ?? null)
   return clientRecord
-}
-
-// Se o cliente marcou dia/horário de vistoria e ainda não existe um
-// compromisso pra isso, cria um (fica marcado como "a confirmar" — quem
-// confirma de verdade é o Luciano, o bot só registra a preferência do
-// cliente pra não se perder).
-async function maybeScheduleVistoria(clientRecord, extracted) {
-  if (!extracted.vistoriaDate) return
-
-  const existing = await prisma.appointment.findFirst({
-    where: { clientId: clientRecord.id, type: 'VISTORIA' },
-  })
-  if (existing) return
-
-  await prisma.appointment.create({
-    data: {
-      userId: clientRecord.userId,
-      title: `Vistoria - ${clientRecord.name}`,
-      type: 'VISTORIA',
-      date: new Date(`${extracted.vistoriaDate}T00:00:00`),
-      time: extracted.vistoriaTime,
-      notes: 'Agendada automaticamente pelo bot a partir da conversa — confirmar com o cliente.',
-      clientId: clientRecord.id,
-    },
-  })
-  await prisma.historyEntry.create({
-    data: {
-      clientId: clientRecord.id,
-      text: `Bot registrou preferência de vistoria pra ${extracted.vistoriaDate}${extracted.vistoriaTime ? ' às ' + extracted.vistoriaTime : ''} — confirmar com o cliente.`,
-    },
-  })
 }
 
 // Responde quando o cliente reage à proposta de horário de vistoria — roda
@@ -292,6 +278,44 @@ async function handleVistoriaResponse(clientRecord, appointment, history) {
   })
 }
 
+// Fecha a etapa de coleta de dados: avisa o cliente que vai repassar pra
+// equipe calcular o valor e marca awaitingBudget — dali pra frente quem
+// assume é o humano ou o budgetWatcher.
+async function finalizeDataCollection(clientId, whatsappChatId) {
+  await sendAndRecord(whatsappChatId, clientId, READY_FOR_BUDGET_MESSAGE)
+  await prisma.client.update({
+    where: { id: clientId },
+    data: {
+      awaitingBudget: true,
+      historyEntries: { create: { text: 'Bot coletou todas as informações da mudança; aguardando orçamento.' } },
+    },
+  })
+}
+
+// Roda enquanto collectingVistoriaMedia=true — dispara ~5min depois da
+// última mídia recebida (ver VISTORIA_MEDIA_DEBOUNCE_MS). Só finaliza a
+// coleta se o cliente já deixou claro que não tem mais nada a mandar; senão
+// pergunta e continua esperando.
+async function handleVistoriaMediaCollection(clientRecord, history) {
+  const done = await classifyMediaSubmissionComplete(history)
+
+  if (!done) {
+    await sendAndRecord(clientRecord.whatsappChatId, clientRecord.id, VISTORIA_MEDIA_MORE_QUESTION)
+    return
+  }
+
+  await sendAndRecord(clientRecord.whatsappChatId, clientRecord.id, VISTORIA_MEDIA_DONE_MESSAGE)
+  const updated = await prisma.client.update({
+    where: { id: clientRecord.id },
+    data: { collectingVistoriaMedia: false },
+  })
+
+  const missing = getMissingRequiredFields(updated)
+  if (missing.length === 0 && !updated.budgetSentAt && updated.budgetValue === null) {
+    await finalizeDataCollection(updated.id, updated.whatsappChatId)
+  }
+}
+
 // Roda extração + resposta pra um cliente depois do período de silêncio do
 // debounce. Se o bot já deixou o cliente esperando o orçamento
 // (awaitingBudget), fica quieto — quem assume dali pra frente é o humano ou
@@ -309,10 +333,17 @@ async function processConversationTurn(clientId) {
     return
   }
 
+  if (clientRecord.collectingVistoriaMedia) {
+    const mediaHistory = await getConversationHistory(clientId)
+    await handleVistoriaMediaCollection(clientRecord, mediaHistory)
+    return
+  }
+
   if (clientRecord.awaitingBudget) return
 
   const history = await getConversationHistory(clientId)
   const extracted = await extractClientInfo(clientRecord, history)
+  const movingDate = await extractMovingDate(history)
 
   // Conversa em andamento de verdade — sai de "Novo contato" assim que o bot
   // começa a trabalhar o lead, pra aparecer nas seções certas do CRM.
@@ -329,17 +360,39 @@ async function processConversationTurn(clientId) {
       ...nameUpdate,
       originAddress: extracted.originAddress,
       destinationAddress: extracted.destinationAddress,
-      movingDate: extracted.movingDate ? new Date(`${extracted.movingDate}T00:00:00`) : null,
-      movingTime: extracted.movingTime,
+      movingDate: movingDate ? new Date(`${movingDate}T00:00:00`) : null,
       propertyType: extracted.propertyType,
       movingNotes: extracted.movingNotes,
       stairsOrElevator: extracted.stairsOrElevator,
       truckAccess: extracted.truckAccess,
       vistoriaResolved: extracted.vistoriaResolved,
+      vistoriaType: extracted.vistoriaType,
     },
   })
 
-  await maybeScheduleVistoria(updated, extracted)
+  // Assunto vistoria acabou de ser resolvido nessa rodada — dispara a
+  // mensagem certa pra cada caminho. "fotos" entra em modo de coleta e para
+  // por aqui (não segue pro "tenho tudo" enquanto não terminar de mandar);
+  // "presencial" só avisa e segue o fluxo normal (pode já cair no "tenho
+  // tudo" logo em seguida, se essa era a última coisa faltando).
+  const vistoriaJustResolved = !clientRecord.vistoriaResolved && updated.vistoriaResolved
+  if (vistoriaJustResolved && updated.vistoriaType === 'presencial') {
+    await sendAndRecord(updated.whatsappChatId, clientId, VISTORIA_PRESENCIAL_MESSAGE)
+  } else if (vistoriaJustResolved && updated.vistoriaType === 'fotos') {
+    await sendAndRecord(updated.whatsappChatId, clientId, VISTORIA_FOTOS_REQUEST_MESSAGE)
+    await prisma.client.update({ where: { id: clientId }, data: { collectingVistoriaMedia: true } })
+    return
+  }
+
+  // Cliente citou item(ns) pela primeira vez nessa rodada — pergunta se tem
+  // mais alguma coisa, só essa vez. A resposta (seja mais itens ou "não")
+  // é aceita como definitiva; não voltamos a perguntar isso de novo, pra não
+  // ficar insistindo mensagem após mensagem.
+  const itemsJustProvided = !clientRecord.movingNotes && updated.movingNotes
+  if (itemsJustProvided) {
+    await sendAndRecord(updated.whatsappChatId, clientId, ITEMS_FOLLOWUP_QUESTION)
+    return
+  }
 
   const missing = getMissingRequiredFields(updated)
 
@@ -348,20 +401,17 @@ async function processConversationTurn(clientId) {
     // pós-venda) — isso o Luciano conduz manualmente, o bot não se mete.
     if (updated.budgetSentAt || updated.budgetValue !== null) return
 
-    const text = 'Perfeito, já tenho tudo que preciso! Vou repassar pra nossa equipe calcular o valor certinho e já te retorno por aqui.'
-    await client.sendMessage(updated.whatsappChatId, text)
-    await recordMessage(clientId, 'OUT', text)
-    await prisma.client.update({
-      where: { id: clientId },
-      data: {
-        awaitingBudget: true,
-        historyEntries: { create: { text: 'Bot coletou todas as informações da mudança; aguardando orçamento.' } },
-      },
-    })
+    await finalizeDataCollection(clientId, updated.whatsappChatId)
     return
   }
 
-  const reply = await generateReply(history, missing)
+  // Manda só o campo que falta primeiro (ordem de REQUIRED_FIELDS) em vez da
+  // lista toda — pedir pro modelo escolher "o próximo item" de uma lista se
+  // mostrou pouco confiável (ex: pulava pra pergunta de data ignorando nome
+  // ainda vazio, ou emendava a pergunta seguinte antes de resolver a atual).
+  // Decidir isso em código é determinístico, igual já é feito com data.
+  const clientFirstName = updated.nameConfirmed ? updated.name?.split(' ')[0] : null
+  const reply = await generateReply(history, missing.slice(0, 1), clientFirstName)
   await client.sendMessage(updated.whatsappChatId, reply)
   await recordMessage(clientId, 'OUT', reply)
 }
@@ -371,7 +421,16 @@ client.on('message', async (msg) => {
 
   const chat = await msg.getChat().catch(() => null)
   if (chat?.isGroup) return
-  if (!BOT_ENABLED_FOR_ALL && !TEST_CONTACTS.includes(msg.from)) return
+
+  if (!BOT_ENABLED_FOR_ALL && !TEST_CONTACTS.includes(msg.from)) {
+    // Fora da lista de teste ainda — só loga quem é, pra dar pra adicionar
+    // na TEST_CONTACTS depois. Não persiste nada, não responde.
+    const contact = await msg.getContact().catch(() => null)
+    console.log(
+      `[${new Date().toISOString()}] 🚫 Mensagem de contato fora da lista de teste: ${msg.from} (${contact?.pushname || contact?.name || 'sem nome'})`,
+    )
+    return
+  }
 
   const text = resolveMessageText(msg)
   if (!text) return // sem conteúdo útil pro bot (ex: áudio, fora de escopo)
@@ -386,13 +445,14 @@ client.on('message', async (msg) => {
     return
   }
 
+  const debounceMs = clientRecord.collectingVistoriaMedia ? VISTORIA_MEDIA_DEBOUNCE_MS : REPLY_DEBOUNCE_MS
   debounce(
     msg.from,
     () =>
       processConversationTurn(clientRecord.id).catch((err) => {
         console.log(`[${new Date().toISOString()}] ⚠️ Falha ao processar conversa: ${err.message}`)
       }),
-    REPLY_DEBOUNCE_MS,
+    debounceMs,
   )
 })
 

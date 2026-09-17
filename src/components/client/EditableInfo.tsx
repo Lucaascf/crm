@@ -15,7 +15,6 @@ type ClientInfo = {
   originAddress: string | null;
   destinationAddress: string | null;
   movingDate: Date | null;
-  movingTime: string | null;
   propertyType: string | null;
   movingNotes: string | null;
   stairsOrElevator: string | null;
@@ -59,7 +58,6 @@ export default function EditableInfo({ client }: { client: ClientInfo }) {
             <InfoField label="Origem" value={client.originAddress} span />
             <InfoField label="Destino" value={client.destinationAddress} span />
             <InfoField label="Data" value={client.movingDate ? formatDate(client.movingDate) : null} />
-            <InfoField label="Horário" value={client.movingTime} />
             <InfoField label="Tipo de imóvel" value={client.propertyType} span />
             <InfoField label="Escada/elevador" value={client.stairsOrElevator} span />
             <InfoField label="Caminhão na porta" value={client.truckAccess} span />
@@ -164,25 +162,14 @@ export default function EditableInfo({ client }: { client: ClientInfo }) {
             className={inputClass}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass}>Data</label>
-            <input
-              type="date"
-              name="movingDate"
-              defaultValue={toDateInputValue(client.movingDate)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Horário</label>
-            <input
-              type="time"
-              name="movingTime"
-              defaultValue={client.movingTime ?? ""}
-              className={inputClass}
-            />
-          </div>
+        <div>
+          <label className={labelClass}>Data</label>
+          <input
+            type="date"
+            name="movingDate"
+            defaultValue={toDateInputValue(client.movingDate)}
+            className={inputClass}
+          />
         </div>
         <div>
           <label className={labelClass}>Tipo de imóvel</label>

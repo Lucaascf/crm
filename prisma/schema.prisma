@@ -35,7 +35,6 @@ model Client {
   originAddress      String?
   destinationAddress String?
   movingDate         DateTime?
-  movingTime         String?
   propertyType       String?
   movingNotes        String?
   stairsOrElevator   String? // escada ou elevador, na origem e no destino
@@ -53,7 +52,9 @@ model Client {
   awaitingBudget   Boolean   @default(false) // bot já coletou tudo, só falta o valor ser preenchido no site
   budgetSentAt     DateTime? // quando o bot mandou o orçamento pro cliente
   nameConfirmed    Boolean   @default(false) // true quando o próprio cliente confirmou o nome completo na conversa (não é só o nome salvo no WhatsApp)
-  vistoriaResolved Boolean   @default(false) // true quando o bot já perguntou sobre vistoria e o cliente respondeu (agendou ou preferiu mandar fotos)
+  vistoriaResolved Boolean   @default(false) // true quando o bot já perguntou sobre vistoria e o cliente respondeu (presencial ou preferiu mandar fotos/vídeo)
+  vistoriaType     String? // "presencial" | "fotos" — o que o cliente escolheu
+  collectingVistoriaMedia Boolean @default(false) // true enquanto o bot espera o cliente terminar de mandar fotos/vídeos da vistoria
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -62,6 +63,7 @@ model Client {
   appointments   Appointment[]
   tasks          Task[]
   messages       Message[]
+  mediaFiles     MediaFile[]
 
   @@index([status])
   @@index([movingDate])
@@ -76,6 +78,21 @@ model Message {
   direction   String // "IN" | "OUT"
   text        String
   waMessageId String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+}
+
+model MediaFile {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type     String // "image" | "video"
+  mimeType String?
+  filePath String // caminho público servido pelo app Next.js (ex: /uploads/clients/<id>/<arquivo>)
+  caption  String? // legenda que o cliente mandou junto, se houver
 
   createdAt DateTime @default(now())
 

@@ -15,6 +15,7 @@ function buildBudgetMessage(client) {
   if (client.budgetNotes) {
     text += `\n\nIsso inclui: ${client.budgetNotes}`
   }
+  text += `\n\nUm encarregado vai entrar em contato pra marcar a vistoria.`
   text += `\n\nQualquer dúvida estou à disposição!`
   return text
 }
