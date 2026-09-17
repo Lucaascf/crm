@@ -23,6 +23,7 @@ Regras:
 - Se um campo já tinha valor e nada mudou, repita o valor que já tinha.
 - Se o cliente corrigiu ou completou uma informação (ex: "esqueci de colocar duas bicicletas"), funda com o que já existia em vez de substituir.
 - "clientName" é o nome completo do cliente, só quando ELE MESMO disser (ex: "meu nome é...", "aqui quem fala é..."). Nunca invente a partir do nome salvo no WhatsApp. Se ainda não disse, null. Um apelido oferecido como alternativa ao nome (ex: "pode me chamar de Zé", "me chama de Bob") NÃO conta como resposta — continua null até ele dizer o nome de verdade.
+- "clientNickname" é o apelido que o cliente ofereceu como alternativa ao nome, se algum (ex: "pode me chamar de Zé" → "Zé"; "me chama de Bob" → "Bob"), mesmo que tenha dito isso na MESMA mensagem em que deu o nome completo. Null se ele nunca ofereceu apelido nenhum.
 - "originAddress" e "destinationAddress" são endereços distintos (origem = de onde sai, destino = pra onde vai). Se o cliente disser os dois de uma vez, mesmo num formato curto (ex: "Salvador pro Rio", "saindo de X e indo pra Y", só as cidades sem rua/bairro), preenche os dois campos com o que ele disse pra cada lado — não precisa ser endereço completo com rua pra contar como resposta válida. Só deixe um campo null se o cliente realmente não disse nada sobre aquele lado ainda. Nunca copie o valor de um campo pro outro quando só um foi informado. NUNCA resuma, abrevie ou reduza o endereço só à cidade quando o cliente deu mais detalhes (rua, número, bairro, complemento, CEP) — copie tudo isso literalmente, cidade incluída. Só fica só com a cidade quando é só isso que o cliente disse mesmo.
 - "movingNotes" é a relação de itens/observações gerais da mudança (o que vai ser transportado, restrições, particularidades). Mantenha como uma lista/texto corrido acumulando tudo que foi mencionado.
 - "stairsOrElevator" descreve se tem escada ou elevador na origem e no destino. SEMPRE no formato "Origem: <resposta>. Destino: <resposta>." — se um dos dois lados não ficou claro, escreve "Origem: ainda não informado." ou "Destino: ainda não informado." em vez de adivinhar. Cuidado com respostas ambíguas tipo "tem escada e elevador no destino" — isso pode significar "escada na origem, elevador no destino" OU "escada E elevador, os dois no destino" (origem não respondida); se não der pra ter certeza de qual é, trate como ambíguo e marque o lado que não ficou claro como "ainda não informado", nunca invente pra desambiguar sozinho. Exceção: se o cliente disser claramente "os dois", "escada e elevador" ou "as duas coisas" respondendo sobre UM lado específico (ex: pergunta era só sobre a origem e ele respondeu "os dois"), aí sim registra os dois pra aquele lado (ex: "Origem: escada e elevador.") — isso não é ambíguo, é uma resposta completa. Só "sim"/"tem" sozinho, sem dizer qual, é que fica ambíguo e vira "ainda não informado".
@@ -38,7 +39,7 @@ Seu jeito de escrever (baseado em conversas reais dele):
 - Direto e casual, nunca formal ou em lista numerada.
 - Mensagens curtas. Prefere mandar 2-3 mensagens curtas a um parágrafo grande.
 - Cumprimenta rápido ("Bom dia" / "Boa tarde" / "Boa noite") e, se for o primeiro contato de verdade, se apresenta ("Me chamo Luciano") e pergunta o nome completo do cliente antes de mais nada.
-- IMPORTANTE: depois que o cliente diz o nome completo, NUNCA MAIS usa o nome dele em nenhuma mensagem seguinte, nem pra confirmar o que ele acabou de responder. Errado: "Beleza, Lucas! Agora preciso saber...". Certo: "Beleza! Agora preciso saber...". Isso vale pra sempre dali em diante, não só na mensagem logo depois do nome.
+- IMPORTANTE: depois que o cliente diz o nome completo, NUNCA MAIS usa nenhum nome pra se referir a ele em nenhuma mensagem seguinte, nem pra confirmar o que ele acabou de responder — nem o nome completo/primeiro nome, nem um apelido que ele tenha oferecido como alternativa (ex: "pode me chamar de Zé", "me chama de Bob"), mesmo que o apelido tenha sido dito na MESMA mensagem que o nome completo. Errado: "Beleza, Lucas!" ou "Beleza, Zé! Agora preciso saber...". Certo: "Beleza! Agora preciso saber...". Isso vale pra sempre dali em diante, não só na mensagem logo depois do nome.
 - Pergunta uma ou duas coisas por vez, nunca despeja a lista toda de uma vez.
 - O endereço de destino é perguntado logo em seguida ao de origem (a próxima pergunta depois da origem, antes de qualquer outro assunto) — a não ser que o cliente já tenha mandado os dois endereços juntos na mesma mensagem, aí não repete a pergunta.
 - A pergunta sobre tipo de imóvel sempre vem com exemplos curtos, no formato "é casa, apartamento ou outro?" (só esses três, não a lista inteira de tipos).
@@ -146,6 +147,7 @@ export async function extractClientInfo(client, messages) {
           type: 'object',
           properties: {
             clientName: { type: ['string', 'null'] },
+            clientNickname: { type: ['string', 'null'] },
             originAddress: { type: ['string', 'null'] },
             destinationAddress: { type: ['string', 'null'] },
             propertyType: { type: ['string', 'null'], enum: [...PROPERTY_TYPES, null] },
@@ -157,6 +159,7 @@ export async function extractClientInfo(client, messages) {
           },
           required: [
             'clientName',
+            'clientNickname',
             'originAddress',
             'destinationAddress',
             'propertyType',
@@ -193,10 +196,11 @@ Sua única tarefa é extrair SINAIS BRUTOS do que o cliente disse — não calcu
 
 - "weekdayName": o dia da semana que o cliente citou (ex: cliente disse "quarta" ou "sexta-feira" → "quarta-feira" / "sexta-feira"), ou null se não citou nenhum.
 - "period": se o cliente mencionou um período relativo — "esta semana", "semana que vem" ou "semana seguinte" — em qualquer mensagem dele sobre a data (mesmo em turno anterior). Null se não mencionou período nenhum.
-- "relativeDays": se o cliente disse "daqui a N dias", esse N (número). Null caso contrário.
-- "dayOfMonth": se o cliente disse um número de dia do mês (ex: "dia 20"), esse número. Null caso contrário.
+- "relativeDays": se o cliente disse "daqui a N dias" ou "em N dias" (as duas formas contam igual — "daqui a 20 dias" e "em 20 dias" são a mesma coisa: relativeDays=20), esse N (número). Trate também "hoje"/"hoje mesmo" como relativeDays=0 e "amanhã" como relativeDays=1, mesmo sem a palavra "dias". NUNCA use este campo pra unidade de semana/mês (ex: "daqui a duas semanas" NÃO é relativeDays=2, é relativeWeeks=2 — preste atenção na unidade dita, não só no número). Null caso contrário.
+- "relativeWeeks": se o cliente disse "daqui a N semanas" ou "em N semanas" (as duas formas contam igual), esse N (número). Null caso contrário.
+- "dayOfMonth": CUIDADO — fácil de confundir com relativeDays, preste bastante atenção. "dayOfMonth" só quando o cliente está apontando um número FIXO no calendário, sempre com a palavra "dia" antes do número (ex: "dia 20", "no dia 5", "dia 20 do mês que vem"). "em N dias" / "daqui a N dias" NUNCA é dayOfMonth, mesmo quando N é um número que também poderia ser dia do calendário (ex: "em 20 dias" é relativeDays=20, NÃO dayOfMonth=20 — não existe a palavra "dia" logo antes do número ali, é "dias" depois, indicando quantidade/prazo, não uma data fixa). Null caso contrário.
 - "monthName": se junto do dia do mês o cliente disse o mês (ex: "dia 5 de outubro" → "outubro"). Null caso contrário (inclusive se não disse dayOfMonth).
-- "vague": true se o cliente só deu uma referência vaga, sem NENHUM dos sinais acima (ex: "semana que vem" sozinho sem dia, "não sei ainda", "talvez mês que vem", "ainda não decidi") — nesse caso todos os outros campos ficam null. Se ele citou weekdayName, relativeDays ou dayOfMonth, vague = false mesmo que também tenha mencionado um período vago.
+- "vague": true se o cliente só deu uma referência vaga, sem NENHUM dos sinais acima (ex: "semana que vem" sozinho sem dia, "não sei ainda", "talvez mês que vem", "ainda não decidi") — nesse caso todos os outros campos ficam null. Se ele citou weekdayName, relativeDays, relativeWeeks ou dayOfMonth, vague = false mesmo que também tenha mencionado um período vago.
 
 Nunca invente um valor que o cliente não disse. Isso é só extração de texto, não é pra fazer conta de data nenhuma.`
 
@@ -208,9 +212,17 @@ function resolveMovingDate(signals) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  if (signals.relativeDays != null) {
+  if (signals.relativeDays != null || signals.relativeWeeks != null) {
+    // Soma em vez de tratar como ramos exclusivos: o modelo às vezes marca
+    // relativeDays=0 quando o cliente usa "hoje"/"a partir de hoje" só como
+    // ponto de partida de uma contagem em semanas (ex: "umas duas semanas a
+    // partir de hoje" → relativeDays=0 E relativeWeeks=2 no mesmo turno). Se
+    // um ramo excluísse o outro, essa combinação perderia silenciosamente as
+    // semanas e devolvia hoje. Somar os dois cobre esse caso E o caso raro de
+    // o cliente combinar as duas unidades de propósito (ex: "uma semana e 2
+    // dias"), sem exigir que o modelo nunca preencha os dois campos junto.
     const d = new Date(today)
-    d.setDate(d.getDate() + signals.relativeDays)
+    d.setDate(d.getDate() + (signals.relativeDays ?? 0) + (signals.relativeWeeks ?? 0) * 7)
     return toLocalISODate(d)
   }
 
@@ -267,11 +279,12 @@ export async function extractMovingDate(messages) {
             weekdayName: { type: ['string', 'null'], enum: [...WEEKDAY_NAMES_PT, null] },
             period: { type: ['string', 'null'], enum: ['esta semana', 'semana que vem', 'semana seguinte', null] },
             relativeDays: { type: ['number', 'null'] },
+            relativeWeeks: { type: ['number', 'null'] },
             dayOfMonth: { type: ['number', 'null'] },
             monthName: { type: ['string', 'null'], enum: [...MONTH_NAMES_PT, null] },
             vague: { type: 'boolean' },
           },
-          required: ['weekdayName', 'period', 'relativeDays', 'dayOfMonth', 'monthName', 'vague'],
+          required: ['weekdayName', 'period', 'relativeDays', 'relativeWeeks', 'dayOfMonth', 'monthName', 'vague'],
           additionalProperties: false,
         },
       },
@@ -317,8 +330,12 @@ function stripClientName(text, clientFirstName) {
  * Gera a próxima mensagem a mandar pro cliente, pedindo o que ainda falta,
  * no tom do Luciano. Se o cliente já confirmou o nome, `clientFirstName`
  * remove qualquer menção a ele que o modelo tenha colocado por engano.
+ * `clientNickname` faz o mesmo pra um apelido que o cliente tenha oferecido
+ * como alternativa (ex: "pode me chamar de Zé") — o prompt já instrui a não
+ * usar nem nome nem apelido, mas essa é a mesma rede de segurança
+ * determinística usada pro nome, pro caso do modelo ignorar a instrução.
  */
-export async function generateReply(messages, missingFields, clientFirstName = null) {
+export async function generateReply(messages, missingFields, clientFirstName = null, clientNickname = null) {
   const missingLabels = missingFields.map((f) => f.label).join(', ')
 
   const completion = await openai.chat.completions.create({
@@ -332,7 +349,9 @@ export async function generateReply(messages, missingFields, clientFirstName = n
     ],
   })
 
-  return stripClientName(completion.choices[0].message.content.trim(), clientFirstName)
+  let text = stripClientName(completion.choices[0].message.content.trim(), clientFirstName)
+  text = stripClientName(text, clientNickname)
+  return text
 }
 
 const VISTORIA_RESPONSE_SYSTEM_PROMPT = `Você está lendo o fim de uma conversa de WhatsApp de uma empresa de mudanças. A empresa acabou de propor um dia/horário específico de vistoria pro cliente e perguntou se funciona.

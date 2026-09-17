@@ -411,7 +411,7 @@ async function processConversationTurn(clientId) {
   // ainda vazio, ou emendava a pergunta seguinte antes de resolver a atual).
   // Decidir isso em código é determinístico, igual já é feito com data.
   const clientFirstName = updated.nameConfirmed ? updated.name?.split(' ')[0] : null
-  const reply = await generateReply(history, missing.slice(0, 1), clientFirstName)
+  const reply = await generateReply(history, missing.slice(0, 1), clientFirstName, extracted.clientNickname)
   await client.sendMessage(updated.whatsappChatId, reply)
   await recordMessage(clientId, 'OUT', reply)
 }
