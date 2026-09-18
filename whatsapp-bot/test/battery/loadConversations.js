@@ -3,7 +3,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-export const EXPORT_DIR = path.resolve(__dirname, '../../export')
+// BATTERY_EXPORT_DIR permite apontar as baterias 1/3/4 (que chamam
+// loadConversations() sem argumento) pra outro dataset (ex: export-marcia/)
+// sem precisar editar cada script — só setar a env var antes de rodar.
+export const EXPORT_DIR = process.env.BATTERY_EXPORT_DIR
+  ? path.resolve(process.env.BATTERY_EXPORT_DIR)
+  : path.resolve(__dirname, '../../export')
 
 /**
  * Carrega as conversas reais exportadas de um diretório (default: export/,
