@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 async function runOne(conv, index) {
   const chatId = `battery1-${index}-${conv.contato}@c.us`
   const waClient = makeFakeWaClient()
-  const handler = createConversationHandler(waClient, { botEnabledForAll: true, log: () => {} })
+  const handler = createConversationHandler(waClient, { botEnabledForAll: true, log: () => {}, schedule: () => {} })
   const turns = groupIntoTurns(conv.messages)
   const mock = getMockOpenAi()
 

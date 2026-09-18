@@ -15,8 +15,8 @@ export const EXPORT_DIR = path.resolve(__dirname, '../../export')
  * resolveMessageText() no bot real também descartaria essas, já que
  * msg.body viria vazio e hasMedia não é reproduzível a partir do JSON).
  */
-export function loadConversations(exportDir = EXPORT_DIR) {
-  const files = fs.readdirSync(exportDir).filter((f) => f.endsWith('.json'))
+export function loadConversations(exportDir = process.env.BATTERY_EXPORT_DIR || EXPORT_DIR) {
+  const files = fs.readdirSync(exportDir).filter((f) => f.endsWith('.json')).sort()
   return files.map((file) => {
     const raw = JSON.parse(fs.readFileSync(path.join(exportDir, file), 'utf8'))
     const messages = (raw.mensagens || [])

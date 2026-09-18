@@ -58,7 +58,7 @@ export function resolveChatId(msg) {
  * negócio mora aqui, testável sem depender de uma sessão WhatsApp de
  * verdade. index.js só cria o Client real e liga o evento nele.
  */
-export function createConversationHandler(waClient, { testContacts = [], botEnabledForAll = false, log = console.log } = {}) {
+export function createConversationHandler(waClient, { testContacts = [], botEnabledForAll = false, log = console.log, schedule = debounce } = {}) {
   const sendAndRecord = (whatsappChatId, clientId, text) => sendAndRecordShared(waClient, whatsappChatId, clientId, text)
 
   // Contatos que chegam como @lid (comum em produção hoje) trazem
@@ -234,9 +234,11 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
         ...nameUpdate,
         originAddress: extracted.originAddress,
         destinationAddress: extracted.destinationAddress,
-        movingDate: movingDate ? new Date(`${movingDate}T00:00:00`) : null,
+        movingDate: movingDate ? new Date(`${movingDate}T00:00:00`) : clientRecord.movingDate,
         propertyType: extracted.propertyType,
         movingNotes: extracted.movingNotes,
+        commercialNotes: extracted.commercialNotes,
+        clientNickname: extracted.clientNickname,
         stairsOrElevator: extracted.stairsOrElevator,
         truckAccess: extracted.truckAccess,
         vistoriaResolved: extracted.vistoriaResolved,
@@ -353,7 +355,7 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
       // conversa (extração/CRM) mas não manda resposta automática enquanto
       // durar o cooldown (ver isHumanHandoffActive).
       await markHumanHandoff(clientRecord.id)
-      debounce(
+      schedule(
         chatId,
         () =>
           processConversationTurn(clientRecord.id).catch((err) => {
@@ -365,7 +367,7 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
     }
 
     const debounceMs = clientRecord.collectingVistoriaMedia ? VISTORIA_MEDIA_DEBOUNCE_MS : REPLY_DEBOUNCE_MS
-    debounce(
+    schedule(
       chatId,
       () =>
         processConversationTurn(clientRecord.id).catch((err) => {

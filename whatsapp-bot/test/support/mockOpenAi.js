@@ -20,6 +20,7 @@ function defaultHandler(body) {
       destinationAddress: null,
       propertyType: null,
       movingNotes: null,
+      commercialNotes: null,
       stairsOrElevator: null,
       truckAccess: null,
       vistoriaType: null,

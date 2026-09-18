@@ -21,6 +21,7 @@ type ClientInfo = {
   truckAccess: string | null;
   budgetValue: number | null;
   budgetNotes: string | null;
+  commercialNotes: string | null;
   awaitingBudget: boolean;
   budgetSentAt: Date | null;
 };
@@ -81,6 +82,12 @@ export default function EditableInfo({ client }: { client: ClientInfo }) {
           <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">
             Orçamento
           </p>
+          {client.commercialNotes && (
+            <div className="mb-3 rounded-xl bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-600 whitespace-pre-wrap">
+              <p className="font-semibold mb-1">Condições mencionadas na conversa</p>
+              {client.commercialNotes}
+            </div>
+          )}
           {client.budgetValue ? (
             <>
               <p className="text-2xl font-bold text-neutral-900">{formatCurrency(client.budgetValue)}</p>

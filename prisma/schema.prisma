@@ -43,6 +43,8 @@ model Client {
   // Orçamento
   budgetValue Float?
   budgetNotes String?
+  commercialNotes String? // resumo extraído; não autoriza orçamento nem envio automático
+  clientNickname String? // apelido informado pelo cliente
 
   // Negociação
   status String @default("NOVO_CONTATO")

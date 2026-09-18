@@ -1,37 +1,16 @@
 import OpenAI from 'openai'
+import { withApiRetry } from './apiRetry.js'
+import { stabilizeExtraction } from './extractionPolicy.js'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 })
 const MODEL = 'gpt-4o-mini'
 
-// Rodando a bateria de testes com API real (ver relatório de handoff),
-// descobrimos que ~10-15% das chamadas nesse tipo de infra falham de forma
-// intermitente com erros que o SDK da OpenAI NÃO reenvia sozinho (ex: 404
-// "no body" — o retry automático do SDK só cobre erro de conexão/408/409/
-// 429/5xx). Sem isso aqui, uma falha transitória silenciosamente derruba o
-// processamento daquela mensagem: processConversationTurn propaga a
-// exceção até o .catch() em index.js, que só loga e segue — o cliente
-// fica sem resposta nem CRM atualizado até a próxima mensagem dele. Poucas
-// tentativas com backoff curto cobre isso sem mascarar erro de verdade
-// (payload malformado etc. continua falhando depois de esgotar as
-// tentativas, e sobe do mesmo jeito de antes).
-const MAX_API_ATTEMPTS = 3
-const RETRY_BASE_DELAY_MS = 400
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function createCompletion(params) {
-  let lastErr
-  for (let attempt = 1; attempt <= MAX_API_ATTEMPTS; attempt++) {
-    try {
-      return await openai.chat.completions.create(params)
-    } catch (err) {
-      lastErr = err
-      if (attempt < MAX_API_ATTEMPTS) await sleep(RETRY_BASE_DELAY_MS * attempt)
-    }
-  }
-  throw lastErr
+// Uma camada de retry: erros permanentes (inclusive 404) exigem diagnóstico.
+function createCompletion(params) {
+  return withApiRetry(() => openai.chat.completions.create(params), {
+    onRetry: (info) => console.warn('[ai] Nova tentativa de API', info),
+    onFailure: (info) => console.error('[ai] Falha definitiva de API', info),
+  })
 }
 
 // Nenhuma chamada abaixo definia `temperature`, o que deixa o default da
@@ -68,13 +47,14 @@ Regras:
 - "clientName" é o nome completo do cliente, só quando ELE MESMO disser (ex: "meu nome é...", "aqui quem fala é..."). Nunca invente a partir do nome salvo no WhatsApp. Se ainda não disse, null. Um apelido oferecido como alternativa ao nome (ex: "pode me chamar de Zé", "me chama de Bob") NÃO conta como resposta — continua null até ele dizer o nome de verdade.
 - "clientNickname" é o apelido que o cliente ofereceu como alternativa ao nome, se algum (ex: "pode me chamar de Zé" → "Zé"; "me chama de Bob" → "Bob"), mesmo que tenha dito isso na MESMA mensagem em que deu o nome completo. Null se ele nunca ofereceu apelido nenhum.
 - "originAddress" e "destinationAddress" são endereços distintos (origem = de onde sai, destino = pra onde vai). Se o cliente disser os dois de uma vez, mesmo num formato curto (ex: "Salvador pro Rio", "saindo de X e indo pra Y", só as cidades sem rua/bairro), preenche os dois campos com o que ele disse pra cada lado — não precisa ser endereço completo com rua pra contar como resposta válida. Só deixe um campo null se o cliente realmente não disse nada sobre aquele lado ainda. Nunca copie o valor de um campo pro outro quando só um foi informado. NUNCA resuma, abrevie ou reduza o endereço só à cidade quando o cliente deu mais detalhes (rua, número, bairro, complemento, CEP) — copie tudo isso literalmente, cidade incluída. Só fica só com a cidade quando é só isso que o cliente disse mesmo.
+- "commercialNotes" resume valores e condições comerciais mencionados, indicando quem propôs e se foram apenas propostos ou explicitamente aceitos. Não trate proposta como acordo. Null se ausentes. Valores declarados de bens para seguro continuam em movingNotes. Nunca gere ou autorize um orçamento.
 - "movingNotes" é a relação de itens/observações gerais da mudança (o que vai ser transportado, restrições, particularidades). Mantenha como uma lista/texto corrido acumulando tudo que foi mencionado. NUNCA inclua aqui negociação de preço, forma de pagamento, parcelamento, nota fiscal ou combinação de valores (ex: "posso pagar uma parte no pix e outra no cartão", "a empresa vai emitir uma nota de R$X") — isso é assunto comercial, não item/observação da mudança, e não deve aparecer neste campo mesmo que o cliente mencione isso junto com os itens. Exceção: o valor declarado de um item específico pra fins de seguro/transporte (ex: "a TV vale R$2.000 pro seguro") pode ficar aqui, porque é uma característica do item, não uma negociação do preço do serviço.
 - "stairsOrElevator" descreve se tem escada ou elevador na origem e no destino. SEMPRE no formato "Origem: <resposta>. Destino: <resposta>." — se um dos dois lados não ficou claro, escreve "Origem: ainda não informado." ou "Destino: ainda não informado." em vez de adivinhar. Cuidado com respostas ambíguas tipo "tem escada e elevador no destino" — isso pode significar "escada na origem, elevador no destino" OU "escada E elevador, os dois no destino" (origem não respondida); se não der pra ter certeza de qual é, trate como ambíguo e marque o lado que não ficou claro como "ainda não informado", nunca invente pra desambiguar sozinho. Exceção: se o cliente disser claramente "os dois", "escada e elevador" ou "as duas coisas" respondendo sobre UM lado específico (ex: pergunta era só sobre a origem e ele respondeu "os dois"), aí sim registra os dois pra aquele lado (ex: "Origem: escada e elevador.") — isso não é ambíguo, é uma resposta completa. Só "sim"/"tem" sozinho, sem dizer qual, é que fica ambíguo e vira "ainda não informado".
 - "truckAccess" descreve só se o caminhão consegue parar na porta dos dois endereços (ex: "Sim, nos dois" ou "Só na origem, no destino precisa descarregar a 50m"). Não é sobre escada/elevador — isso vai em "stairsOrElevator", não aqui. "Só X" / "somente X" / "apenas X" é uma resposta COMPLETA pros dois lados — significa "sim em X, não no outro" (ex: cliente disse "só no destino" → "Origem: não consegue parar. Destino: consegue parar." — não deixe origem como "ainda não informado" nesse caso, já foi respondido implicitamente). Só use "ainda não informado" quando o cliente realmente não disse nada sobre aquele lado, nem mesmo implicitamente. Se o cliente disser que o problema é nos DOIS endereços (ex: "não consegue em nenhum dos dois", "tem que descarregar longe nos dois", "nenhum dos dois tem acesso"), os dois lados ficam "não consegue parar" — não presuma que um dos lados está OK só porque ele não foi citado individualmente. IMPORTANTE: se esse campo já tinha uma resposta definida (ver "estado atual dos campos") e nada de novo sobre acesso de caminhão foi dito nesta parte da conversa, repita o valor que já existia — nunca troque de volta pra "ainda não informado" só porque o assunto não veio à tona de novo nesta rodada.
 - "propertyType" só pode ser um destes valores, ou null: ${PROPERTY_TYPES.join(', ')}.
 - "vistoriaType" é "presencial" se o cliente topar uma vistoria presencial, ou "fotos" se ele preferir mandar fotos/vídeo dos itens em vez de vistoria. Null se ele ainda não escolheu.
 - "vistoriaResolved" é true assim que o cliente escolher um dos dois (presencial ou fotos/vídeo) — não precisa de data/horário pra contar como resolvido, isso quem combina é um assistente humano depois. Continua false se o assunto ainda nem foi levantado ou o cliente ainda não respondeu sobre isso.
-- Nunca invente informação que não foi dita na conversa.`
+- Nunca invente informação que não foi dita na conversa. Menção a apartamento, andar, mudança ou orçamento NÃO confirma acesso de caminhão. Fotos/áudios sem transcrição não são evidência de acesso. Um nome usado pela Empresa para se dirigir ao cliente NÃO é um apelido oferecido pelo cliente.`
 
 const REPLY_SYSTEM_PROMPT = `Você é o Luciano, atendente da Trevo Mudanças e Transportes, respondendo pelo WhatsApp da empresa.
 
@@ -162,10 +142,12 @@ function historyToText(messages) {
 export async function extractClientInfo(client, messages) {
   const currentState = {
     clientNameConfirmed: client.nameConfirmed ? client.name : null,
+    clientNickname: client.clientNickname ?? null,
     originAddress: client.originAddress,
     destinationAddress: client.destinationAddress,
     propertyType: client.propertyType,
     movingNotes: client.movingNotes,
+    commercialNotes: client.commercialNotes,
     stairsOrElevator: client.stairsOrElevator,
     truckAccess: client.truckAccess,
     vistoriaResolved: client.vistoriaResolved,
@@ -196,6 +178,7 @@ export async function extractClientInfo(client, messages) {
             destinationAddress: { type: ['string', 'null'] },
             propertyType: { type: ['string', 'null'], enum: [...PROPERTY_TYPES, null] },
             movingNotes: { type: ['string', 'null'] },
+            commercialNotes: { type: ['string', 'null'] },
             stairsOrElevator: { type: ['string', 'null'] },
             truckAccess: { type: ['string', 'null'] },
             vistoriaType: { type: ['string', 'null'], enum: ['presencial', 'fotos', null] },
@@ -208,6 +191,7 @@ export async function extractClientInfo(client, messages) {
             'destinationAddress',
             'propertyType',
             'movingNotes',
+            'commercialNotes',
             'stairsOrElevator',
             'truckAccess',
             'vistoriaType',
@@ -219,7 +203,7 @@ export async function extractClientInfo(client, messages) {
     },
   })
 
-  return JSON.parse(completion.choices[0].message.content)
+  return stabilizeExtraction(client, JSON.parse(completion.choices[0].message.content))
 }
 
 const MONTH_NAMES_PT = [

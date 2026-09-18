@@ -1,3 +1,4 @@
+import { provenance } from './provenance.js'
 // Bateria 2 combinada: roda a mesma extração de CRM com API real
 // (extractClientInfo + extractMovingDate, temperature=0) sobre DOIS
 // datasets na mesma bateria — export/ (383 conversas originais) e
@@ -92,11 +93,7 @@ async function runDataset(ds, proxy) {
   return { totalContatosNoDiretorio: conversations.length, skippedEmpty, results }
 }
 
-// Reaproveita o resultado já existente de out/crm-accuracy-results.json
-// (bateria rodada mais cedo, só pro dataset export/, 356 conversas) em vez
-// de gastar API real de novo pra recalcular o mesmo dado — mesma
-// metodologia (temperature=0, mesmo modelo), resultado idêntico ao que uma
-// nova rodada produziria. Só export-marcia roda fresco aqui.
+// Reuso histórico somente quando solicitado; não valida o código atual.
 const REUSE_EXPORT_RESULTS_PATH = path.resolve(__dirname, 'out/crm-accuracy-results.json')
 
 function loadReusedExportResults() {
@@ -115,16 +112,18 @@ async function main() {
   const allResults = []
   let reusedCost = { promptTokens: 0, completionTokens: 0, costUsd: 0 }
 
-  const reused = loadReusedExportResults()
-  perDataset.export = reused.info
-  allResults.push(...reused.results)
-  reusedCost = reused.cost
-  console.log(`[export] reaproveitado de ${REUSE_EXPORT_RESULTS_PATH}: ${reused.results.length} conversas (sem chamada nova à API)`)
-
-  const marciaDs = DATASETS.find((d) => d.name === 'export-marcia')
-  const r = await runDataset(marciaDs, proxy)
-  perDataset[marciaDs.name] = { label: marciaDs.label, dir: marciaDs.dir, totalContatosNoDiretorio: r.totalContatosNoDiretorio, skippedEmpty: r.skippedEmpty, processedCount: r.results.length, reused: false }
-  allResults.push(...r.results)
+  for (const ds of DATASETS) {
+    if (ds.name === 'export' && process.env.BATTERY_REUSE_EXPORT === 'true') {
+      const reused = loadReusedExportResults()
+      perDataset.export = reused.info
+      allResults.push(...reused.results)
+      reusedCost = reused.cost
+      continue
+    }
+    const r = await runDataset(ds, proxy)
+    perDataset[ds.name] = { label: ds.label, totalContatosNoDiretorio: r.totalContatosNoDiretorio, skippedEmpty: r.skippedEmpty, processedCount: r.results.length, reused: false }
+    allResults.push(...r.results)
+  }
 
   const freshCost = estimateCostUsd(proxy.calls)
   const cost = {
@@ -139,7 +138,7 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true })
   fs.writeFileSync(
     path.join(outDir, 'crm-accuracy-results-combined.json'),
-    JSON.stringify({ perDataset, cost, flaggedCount, errorCount, totalConversas: allResults.length, results: allResults }, null, 2),
+    JSON.stringify({ provenance: provenance(), perDataset, cost, flaggedCount, errorCount, totalConversas: allResults.length, results: allResults }, null, 2),
   )
 
   console.log('\n=== RESUMO BATERIA 2 COMBINADA — extração CRM com API real (export + export-marcia) ===')
@@ -149,7 +148,7 @@ async function main() {
   console.log(`Total processados (ambos datasets): ${allResults.length}`)
   console.log(`Conversas com erro na chamada: ${errorCount}`)
   console.log(`Conversas com flag heurística (revisar): ${flaggedCount}`)
-  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries por 404 transitório: ${proxy.retryLog?.length ?? 0})`)
+  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries adicionais no proxy: ${proxy.retryLog?.length ?? 0})`)
   console.log(`Tokens prompt: ${cost.promptTokens} | Tokens completion: ${cost.completionTokens}`)
   console.log(`Custo estimado (gpt-4o-mini): US$ ${cost.costUsd.toFixed(4)}`)
 }

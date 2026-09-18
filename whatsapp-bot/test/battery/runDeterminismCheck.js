@@ -1,3 +1,5 @@
+import { provenance } from './provenance.js'
+import { pickSample, cosmeticEqual } from './sample.js'
 // Bateria 4 (seção 12, custo real — rodar só via
 // test/support/setupRealApiTestDb.js): valida de verdade (API real, não
 // mock) se temperature=0 tornou extractClientInfo/extractMovingDate
@@ -21,18 +23,12 @@ const BASE_CLIENT_STATE = {
   vistoriaResolved: false, vistoriaType: null,
 }
 
-function pickSample(conversations, n) {
-  const stride = Math.max(1, Math.floor(conversations.length / n))
-  const sample = []
-  for (let i = 0; i < conversations.length && sample.length < n; i += stride) sample.push(conversations[i])
-  return sample
-}
 
 function diffKeys(a, b) {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)])
   const diffs = []
   for (const k of keys) {
-    if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) diffs.push({ field: k, run1: a[k], run2: b[k] })
+    if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) diffs.push({ field: k, run1: a[k], run2: b[k], cosmetic: cosmeticEqual(a[k], b[k]) })
   }
   return diffs
 }
@@ -57,7 +53,7 @@ async function main() {
 
     results.push({
       file: conv.file,
-      extractionStable: JSON.stringify(extract1) === JSON.stringify(extract2),
+      extractionStable: diffKeys(extract1, extract2).length === 0,
       extractionDiffs: diffKeys(extract1, extract2),
       dateStable: date1 === date2,
       date1,
@@ -66,11 +62,12 @@ async function main() {
   }
 
   const stableCount = results.filter((r) => r.extractionStable && r.dateStable).length
+  const contentUnstableCount = results.filter((r) => !r.dateStable || r.extractionDiffs.some((d) => !d.cosmetic)).length
   const cost = estimateCostUsd(proxy.calls)
 
   const outDir = process.env.BATTERY_OUT_DIR || path.resolve(__dirname, 'out')
   fs.mkdirSync(outDir, { recursive: true })
-  fs.writeFileSync(path.join(outDir, 'determinism-results.json'), JSON.stringify({ cost, stableCount, total: results.length, results }, null, 2))
+  fs.writeFileSync(path.join(outDir, 'determinism-results.json'), JSON.stringify({ provenance: provenance(), cost, stableCount, contentUnstableCount, requestedSampleSize: SAMPLE_SIZE, total: results.length, results }, null, 2))
 
   console.log('\n=== RESUMO BATERIA 4 — determinismo com API real ===')
   console.log(`Conversas testadas 2x: ${results.length}`)

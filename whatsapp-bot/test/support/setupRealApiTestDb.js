@@ -24,6 +24,8 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 const dbPath = path.join(os.tmpdir(), `trevo-bot-realapi-${process.pid}-${Date.now()}.db`)
+// O engine SQLite deste ambiente exige que o arquivo exista antes de db push.
+fs.closeSync(fs.openSync(dbPath, 'wx'))
 process.env.DATABASE_URL = `file:${dbPath}`
 process.env.BOT_ENABLED_FOR_ALL = 'false'
 

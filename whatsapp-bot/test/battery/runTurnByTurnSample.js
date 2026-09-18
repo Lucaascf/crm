@@ -1,3 +1,5 @@
+import { provenance } from './provenance.js'
+import { pickSample } from './sample.js'
 // Bateria 3 (seções 6-8, com custo real — rodar só via
 // test/support/setupRealApiTestDb.js): replay TURNO A TURNO (não só o
 // resultado final) de uma AMOSTRA de conversas reais, usando
@@ -21,22 +23,11 @@ import { estimateCostUsd } from '../support/recordingProxy.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SAMPLE_SIZE = Number(process.env.BATTERY3_SAMPLE_SIZE || 15)
 
-function pickSample(conversations, n) {
-  // Amostra espalhada (stride) em vez das N primeiras, pra pegar
-  // diversidade de tamanho/conteúdo em vez de um viés de ordem alfabética
-  // de arquivo.
-  const stride = Math.max(1, Math.floor(conversations.length / n))
-  const sample = []
-  for (let i = 0; i < conversations.length && sample.length < n; i += stride) {
-    sample.push(conversations[i])
-  }
-  return sample
-}
 
 async function runOne(conv, index, proxy) {
   const chatId = `battery3-${index}-${conv.contato}@c.us`
   const waClient = makeFakeWaClient()
-  const handler = createConversationHandler(waClient, { botEnabledForAll: true, log: () => {} })
+  const handler = createConversationHandler(waClient, { botEnabledForAll: true, log: () => {}, schedule: () => {} })
   const turns = groupIntoTurns(conv.messages)
 
   const result = {
@@ -121,13 +112,13 @@ async function main() {
   const cost = estimateCostUsd(proxy.calls)
   const outDir = process.env.BATTERY_OUT_DIR || path.resolve(__dirname, 'out')
   fs.mkdirSync(outDir, { recursive: true })
-  fs.writeFileSync(path.join(outDir, 'turn-by-turn-sample-results.json'), JSON.stringify({ cost, results }, null, 2))
+  fs.writeFileSync(path.join(outDir, 'turn-by-turn-sample-results.json'), JSON.stringify({ provenance: provenance(), cost, requestedSampleSize: SAMPLE_SIZE, processedCount: results.length, results }, null, 2))
 
   console.log('\n=== RESUMO BATERIA 3 — replay turno a turno (API real, amostra) ===')
   console.log(`Conversas amostradas: ${results.length}`)
   console.log(`Violações (bot falou por cima do humano): ${results.reduce((s, r) => s + r.violationsTalkOverHuman, 0)}`)
   console.log(`Crashes: ${results.reduce((s, r) => s + r.crashes, 0)}`)
-  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries por 404 transitório: ${proxy.retryLog?.length ?? 0})`)
+  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries adicionais no proxy: ${proxy.retryLog?.length ?? 0})`)
   console.log(`Custo estimado (gpt-4o-mini): US$ ${cost.costUsd.toFixed(4)}`)
 }
 

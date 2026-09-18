@@ -22,6 +22,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..') // .../support -> test -> whatsapp-bot -> crm
 
 const dbPath = path.join(os.tmpdir(), `trevo-bot-test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+// O engine SQLite deste ambiente exige que o arquivo exista antes de db push.
+fs.closeSync(fs.openSync(dbPath, 'wx'))
 process.env.DATABASE_URL = `file:${dbPath}`
 process.env.OPENAI_API_KEY = 'sk-test-fake-key-mock-server-only'
 process.env.BOT_ENABLED_FOR_ALL = 'false'

@@ -1,3 +1,4 @@
+import { provenance } from './provenance.js'
 // Bateria 2 (seção 10 do pedido, custo real — rodar só via
 // test/support/setupRealApiTestDb.js): pra cada uma das 383 conversas
 // reais, roda extractClientInfo + extractMovingDate DE VERDADE (API real,
@@ -88,13 +89,13 @@ async function main() {
 
   const outDir = process.env.BATTERY_OUT_DIR || path.resolve(__dirname, 'out')
   fs.mkdirSync(outDir, { recursive: true })
-  fs.writeFileSync(path.join(outDir, 'crm-accuracy-results.json'), JSON.stringify({ cost, flaggedCount, errorCount, totalConversas: results.length, results }, null, 2))
+  fs.writeFileSync(path.join(outDir, 'crm-accuracy-results.json'), JSON.stringify({ provenance: provenance(), cost, flaggedCount, errorCount, totalConversas: results.length, results }, null, 2))
 
   console.log('\n=== RESUMO BATERIA 2 — extração CRM com API real ===')
   console.log(`Conversas processadas: ${results.length}`)
   console.log(`Conversas com erro na chamada: ${errorCount}`)
   console.log(`Conversas com flag heurística (revisar): ${flaggedCount}`)
-  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries por 404 transitório: ${proxy.retryLog?.length ?? 0})`)
+  console.log(`Chamadas reais feitas: ${proxy.calls.length} (retries adicionais no proxy: ${proxy.retryLog?.length ?? 0})`)
   console.log(`Tokens prompt: ${cost.promptTokens} | Tokens completion: ${cost.completionTokens}`)
   console.log(`Custo estimado (gpt-4o-mini): US$ ${cost.costUsd.toFixed(4)}`)
 }
