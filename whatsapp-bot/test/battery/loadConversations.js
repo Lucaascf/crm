@@ -6,17 +6,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const EXPORT_DIR = path.resolve(__dirname, '../../export')
 
 /**
- * Carrega as 383 conversas reais exportadas (export/*.json — formato
+ * Carrega as conversas reais exportadas de um diretório (default: export/,
+ * as 383 conversas originais — export-marcia/ é o segundo dataset, 881
+ * contatos, ver relatório) — formato
  * {contato, mensagens: [{remetente: "Cliente"|"Operador", texto, timestamp}]})
  * e devolve uma lista normalizada, ordenada por timestamp, filtrando
  * mensagens sem texto (ex: figurinha/mídia sem legenda no export original —
  * resolveMessageText() no bot real também descartaria essas, já que
  * msg.body viria vazio e hasMedia não é reproduzível a partir do JSON).
  */
-export function loadConversations() {
-  const files = fs.readdirSync(EXPORT_DIR).filter((f) => f.endsWith('.json'))
+export function loadConversations(exportDir = EXPORT_DIR) {
+  const files = fs.readdirSync(exportDir).filter((f) => f.endsWith('.json'))
   return files.map((file) => {
-    const raw = JSON.parse(fs.readFileSync(path.join(EXPORT_DIR, file), 'utf8'))
+    const raw = JSON.parse(fs.readFileSync(path.join(exportDir, file), 'utf8'))
     const messages = (raw.mensagens || [])
       .filter((m) => m.texto && m.texto.trim() !== '')
       .map((m) => ({

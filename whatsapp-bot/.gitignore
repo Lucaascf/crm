@@ -10,4 +10,8 @@ index.js.bak-*
 
 # dados reais de clientes (export do WhatsApp e resultados de baterias com IA real)
 export/
+export-*/
 test/battery/out/
+
+# sessão avulso do scripts/exportHistory.js (número diferente do bot de produção)
+auth_info_export/
