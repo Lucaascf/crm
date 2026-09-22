@@ -218,23 +218,36 @@ const MONTH_NAMES_PT = [
 // Em vez disso, o modelo só extrai os SINAIS BRUTOS do texto (dia da semana
 // citado, período citado, etc — tarefa bem mais simples e confiável), e o
 // cálculo da data final é 100% determinístico em código.
-const MOVING_DATE_SIGNALS_SYSTEM_PROMPT = `Você lê o fim de uma conversa de WhatsApp entre uma empresa de mudanças e um cliente, especificamente a parte sobre quando vai ser a mudança.
+const MOVING_DATE_SIGNALS_SYSTEM_PROMPT = `Você lê o fim de uma conversa de WhatsApp entre uma empresa de mudanças e um cliente.
 
-Sua única tarefa é extrair SINAIS BRUTOS do que o cliente disse — não calcule nenhuma data, só identifique o que foi dito:
+A conversa pode tratar de até quatro eventos com datas diferentes, que você NUNCA deve confundir entre si:
+- "mudança": o dia em que a mudança em si acontece (o caminhão leva os itens da origem pro destino).
+- "vistoria": visita presencial de um vistoriador pra avaliar os itens antes do orçamento, ou o prazo pra mandar fotos/vídeo em vez da visita.
+- "coleta": quando um item específico é recolhido/buscado separadamente da mudança principal.
+- "entrega": quando um item ou a carga é entregue no destino como evento separado da mudança em si.
 
-Considere somente as falas do Cliente para preencher os sinais. Falas da
+Sua única tarefa é: (1) identificar a qual desses quatro eventos a parte mais recente da conversa sobre data se refere, e (2) extrair SINAIS BRUTOS da data — só quando ela for sobre o evento "mudança" — do que o cliente disse. Nunca calcule nenhuma data, só identifique o que foi dito.
+
+Regras de desambiguação entre eventos (a parte mais importante desta tarefa):
+- Releia a pergunta ou o assunto da Empresa imediatamente antes da resposta do cliente sobre data. Se a Empresa perguntou sobre agendar vistoria (visita presencial, "vistoriador", "receber alguém em casa"), sobre mandar fotos/vídeo, sobre buscar/recolher um item específico, ou sobre entrega — a data que o cliente responder é sobre AQUELE evento, nunca sobre a mudança, mesmo que a resposta seja só "amanhã" ou uma data solta sem repetir o assunto.
+- Se o cliente mencionar datas de mais de um evento no mesmo trecho (ex: "a vistoria pode ser amanhã, mas a mudança mesmo só dia 20"), extraia sinais somente da data ligada à mudança; ignore completamente a(s) data(s) dos outros eventos, mesmo que apareçam bem próximas no texto.
+- Se a única data mencionada no trecho for de vistoria, coleta ou entrega — sem nenhuma menção separada à data da mudança em si — todos os sinais de data ficam null e "vague" fica true, mesmo que a data desse outro evento seja bem específica. Isso é uma extração válida e esperada, não uma falha: essas datas simplesmente não preenchem data de mudança.
+- Em caso de dúvida genuína sobre a qual evento uma data pertence (contexto insuficiente pra decidir), NÃO associe a data à mudança — trate como se não houvesse sinal de mudança nenhum (todos os campos de data null, vague=true). Nunca resolva a ambiguidade em favor de preencher a mudança.
+
+Considere somente as falas do Cliente para preencher os sinais de data da mudança. Falas da
 Empresa podem conter sugestões de datas, mas não são declarações do cliente.
-Se o cliente corrigiu ou substituiu uma data ao longo da conversa, use a
-decisão mais recente dele e descarte os sinais incompatíveis das falas
-anteriores.
+Se o cliente corrigiu ou substituiu a data da mudança ao longo da conversa, use a
+decisão mais recente dele sobre a MUDANÇA e descarte os sinais incompatíveis das falas
+anteriores sobre a mudança (isso não vale pra datas de outros eventos, que nunca entram nesse cálculo).
 
-- "weekdayName": o dia da semana que o cliente citou (ex: cliente disse "quarta" ou "sexta-feira" → "quarta-feira" / "sexta-feira"), ou null se não citou nenhum.
-- "period": se o cliente mencionou um período relativo — "esta semana", "semana que vem" ou "semana seguinte" — em qualquer mensagem dele sobre a data (mesmo em turno anterior). Null se não mencionou período nenhum.
-- "relativeDays": se o cliente disse "daqui a N dias" ou "em N dias" (as duas formas contam igual — "daqui a 20 dias" e "em 20 dias" são a mesma coisa: relativeDays=20), esse N (número). Trate também "hoje"/"hoje mesmo" como relativeDays=0 e "amanhã" como relativeDays=1, mesmo sem a palavra "dias". NUNCA use este campo pra unidade de semana/mês (ex: "daqui a duas semanas" NÃO é relativeDays=2, é relativeWeeks=2 — preste atenção na unidade dita, não só no número). Null caso contrário.
-- "relativeWeeks": somente se o cliente disse explicitamente "daqui a N semanas" ou "em N semanas" (as duas formas contam igual), esse N (número). "Semana que vem" é period="semana que vem" e relativeWeeks=null; nunca converta um período nomeado em contagem de semanas. Null caso contrário.
-- "dayOfMonth": CUIDADO — fácil de confundir com relativeDays, preste bastante atenção. "dayOfMonth" só quando o cliente está apontando um número FIXO no calendário, sempre com a palavra "dia" antes do número (ex: "dia 20", "no dia 5", "dia 20 do mês que vem"). "em N dias" / "daqui a N dias" NUNCA é dayOfMonth, mesmo quando N é um número que também poderia ser dia do calendário (ex: "em 20 dias" é relativeDays=20, NÃO dayOfMonth=20 — não existe a palavra "dia" logo antes do número ali, é "dias" depois, indicando quantidade/prazo, não uma data fixa). Null caso contrário.
-- "monthName": se junto do dia do mês o cliente disse o mês (ex: "dia 5 de outubro" → "outubro"). Null caso contrário (inclusive se não disse dayOfMonth).
-- "vague": true se o cliente só deu uma referência vaga, sem NENHUM dos sinais acima (ex: "semana que vem" sozinho sem dia, "não sei ainda", "talvez mês que vem", "ainda não decidi") — nesse caso todos os outros campos ficam null. Se ele citou weekdayName, relativeDays, relativeWeeks ou dayOfMonth, vague = false mesmo que também tenha mencionado um período vago.
+- "event": qual dos quatro eventos ("mudança", "vistoria", "coleta" ou "entrega") a parte mais recente da conversa sobre data está tratando. Null só se o trecho não mencionar data de evento nenhum.
+- "weekdayName": o dia da semana que o cliente citou SOBRE A MUDANÇA (ex: cliente disse "quarta" ou "sexta-feira" → "quarta-feira" / "sexta-feira"), ou null se não citou nenhum, ou se o dia citado for de outro evento.
+- "period": se o cliente mencionou um período relativo — "esta semana", "semana que vem" ou "semana seguinte" — em qualquer mensagem dele SOBRE A MUDANÇA (mesmo em turno anterior). Null se não mencionou período nenhum sobre a mudança.
+- "relativeDays": se o cliente disse "daqui a N dias" ou "em N dias" SOBRE A MUDANÇA (as duas formas contam igual — "daqui a 20 dias" e "em 20 dias" são a mesma coisa: relativeDays=20), esse N (número). Trate também "hoje"/"hoje mesmo" como relativeDays=0 e "amanhã" como relativeDays=1, mesmo sem a palavra "dias" — mas só quando isso for resposta sobre a mudança, nunca sobre vistoria/coleta/entrega. NUNCA use este campo pra unidade de semana/mês (ex: "daqui a duas semanas" NÃO é relativeDays=2, é relativeWeeks=2 — preste atenção na unidade dita, não só no número). Null caso contrário.
+- "relativeWeeks": somente se o cliente disse explicitamente "daqui a N semanas" ou "em N semanas" SOBRE A MUDANÇA (as duas formas contam igual), esse N (número). "Semana que vem" é period="semana que vem" e relativeWeeks=null; nunca converta um período nomeado em contagem de semanas. Null caso contrário.
+- "dayOfMonth": CUIDADO — fácil de confundir com relativeDays, preste bastante atenção. "dayOfMonth" só quando o cliente está apontando um número FIXO no calendário SOBRE A MUDANÇA, sempre com a palavra "dia" antes do número (ex: "dia 20", "no dia 5", "dia 20 do mês que vem"). "em N dias" / "daqui a N dias" NUNCA é dayOfMonth, mesmo quando N é um número que também poderia ser dia do calendário (ex: "em 20 dias" é relativeDays=20, NÃO dayOfMonth=20 — não existe a palavra "dia" logo antes do número ali, é "dias" depois, indicando quantidade/prazo, não uma data fixa). Null caso contrário.
+- "monthName": se junto do dia do mês sobre a mudança o cliente disse o mês (ex: "dia 5 de outubro" → "outubro"). Null caso contrário (inclusive se não disse dayOfMonth).
+- "vague": true se o cliente só deu uma referência vaga sobre a MUDANÇA, sem NENHUM dos sinais acima (ex: "semana que vem" sozinho sem dia, "não sei ainda", "talvez mês que vem", "ainda não decidi"), OU se a única data do trecho pertence a outro evento (vistoria/coleta/entrega) — nesse caso todos os outros campos ficam null. Se ele citou weekdayName, relativeDays, relativeWeeks ou dayOfMonth sobre a mudança, vague = false mesmo que também tenha mencionado um período vago.
 
 Nunca invente um valor que o cliente não disse. Isso é só extração de texto, não é pra fazer conta de data nenhuma.`
 
@@ -311,6 +324,7 @@ export async function extractMovingDate(messages, referenceDate = new Date()) {
         schema: {
           type: 'object',
           properties: {
+            event: { type: ['string', 'null'], enum: ['mudança', 'vistoria', 'coleta', 'entrega', null] },
             weekdayName: { type: ['string', 'null'], enum: [...WEEKDAY_NAMES_PT, null] },
             period: { type: ['string', 'null'], enum: ['esta semana', 'semana que vem', 'semana seguinte', null] },
             relativeDays: { type: ['number', 'null'] },
@@ -319,7 +333,7 @@ export async function extractMovingDate(messages, referenceDate = new Date()) {
             monthName: { type: ['string', 'null'], enum: [...MONTH_NAMES_PT, null] },
             vague: { type: 'boolean' },
           },
-          required: ['weekdayName', 'period', 'relativeDays', 'relativeWeeks', 'dayOfMonth', 'monthName', 'vague'],
+          required: ['event', 'weekdayName', 'period', 'relativeDays', 'relativeWeeks', 'dayOfMonth', 'monthName', 'vague'],
           additionalProperties: false,
         },
       },
@@ -327,7 +341,14 @@ export async function extractMovingDate(messages, referenceDate = new Date()) {
   })
 
   const signals = JSON.parse(completion.choices[0].message.content)
-  return signals.vague ? null : resolveMovingDate(signals, referenceDate)
+  // Defesa em profundidade além do prompt: mesmo que o modelo preencha os
+  // campos de data por engano, só deixamos uma data virar movingDate quando
+  // o próprio modelo identificou explicitamente que o evento em questão é a
+  // MUDANÇA — nunca vistoria, coleta, entrega ou nenhum evento (null). Isso
+  // é o que impede uma data de vistoria/coleta/entrega de contaminar
+  // movingDate mesmo com sinais brutos presentes.
+  if (signals.vague || signals.event !== 'mudança') return null
+  return resolveMovingDate(signals, referenceDate)
 }
 
 function escapeRegExp(s) {

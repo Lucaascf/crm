@@ -8,6 +8,7 @@ test('resolve "amanhã" usando o timestamp histórico, não o relógio da execu�
   mock.setHandler((body) => {
     assert.equal(body.response_format?.json_schema?.name, 'moving_date_signals')
     return JSON.stringify({
+      event: 'mudança',
       weekdayName: null,
       period: null,
       relativeDays: 1,
@@ -79,6 +80,7 @@ test('resolve datas relativas e preserva datas explícitas com datas-base fixas'
   try {
     for (const entry of cases) {
       mock.setHandler(() => JSON.stringify({
+        event: 'mudança',
         weekdayName: null,
         period: null,
         relativeDays: null,

@@ -29,6 +29,7 @@ function defaultHandler(body) {
   }
   if (schemaName === 'moving_date_signals') {
     return JSON.stringify({
+      event: null,
       weekdayName: null,
       period: null,
       relativeDays: null,

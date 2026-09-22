@@ -13,7 +13,7 @@ O custo acumulado oficial, incluindo a execução anterior incorporada pelo harn
 
 Não há evidência de chamada em voo ou resultado pendente. A última tentativa terminou em HTTP 200 às `2026-09-19T16:59:30.879Z`; os artefatos ficaram sem alteração por aproximadamente uma hora antes da verificação final. O processo continuava vivo apenas por um defeito no laço de workers ociosos do harness. Após confirmar a completude dos resultados e a ausência de atividade, ele foi encerrado com `Ctrl-C`. Nenhum artefato foi perdido ou reescrito.
 
-O resultado estrutural é forte, mas **não equivale a acurácia semântica**. A leitura dirigida dos artefatos encontrou problemas reais: datas relativas históricas resolvidas contra o relógio da reprodução (já corrigido — ver seção 6.1), campos preenchidos sem suporte textual suficiente, confusão entre data de vistoria/entrega e data da mudança, e cancelamentos sem representação estruturada. A política de estabilização eliminou perda sintática de valores conhecidos — houve zero transição de valor não nulo para `null` —, mas isso também pode conservar informação obsoleta quando há exclusão ou cancelamento.
+O resultado estrutural é forte, mas **não equivale a acurácia semântica**. A leitura dirigida dos artefatos encontrou problemas reais: datas relativas históricas resolvidas contra o relógio da reprodução (já corrigido — ver seção 6.1), campos preenchidos sem suporte textual suficiente, confusão entre data de vistoria/coleta/entrega e data da mudança (já corrigido — ver seção 6.1 e `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`), e cancelamentos sem representação estruturada. A política de estabilização eliminou perda sintática de valores conhecidos — houve zero transição de valor não nulo para `null` —, mas isso também pode conservar informação obsoleta quando há exclusão ou cancelamento.
 
 Nenhuma correção foi aplicada ao produto, ao harness, aos datasets ou aos artefatos da execução durante esta consolidação.
 
@@ -196,7 +196,7 @@ Evidências:
 
 - 317 transições alteraram uma data já não nula ao longo dos turnos;
 - em `results/export/5511956059062.json`, a data muda repetidamente entre `2026-09-19`, `2026-09-27`, `2026-09-24`, `2026-09-18`, `2026-09-23` e `2026-09-25`, inclusive em turnos compostos apenas por fotos;
-- em `results/export/557188435065.json`, “amanhã à tarde” se referia ao agendamento da vistoria, mas o estado final recebeu `movingDate: 2026-09-19`;
+- em `results/export/557188435065.json`, “amanhã à tarde” se referia ao agendamento da vistoria, mas o estado final recebeu `movingDate: 2026-09-19` — **nota adicionada em 22/09/2026:** este exemplo específico combinava os dois defeitos ao mesmo tempo (relógio errado E confusão de evento); corrigir só o relógio (ver validação da correção logo abaixo, que já reproduzia a mesma confusão de evento com data temporalmente correta) não bastava para este caso. A causa da confusão de evento em si é tratada à parte no item P0.2 e em `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`;
 - em `results/export-marcia/137267859439796.json`, uma mensagem promocional alheia a mudança, com prazo “hoje”, produziu `movingDate: 2026-09-18`.
 
 Esse problema combinava uma limitação do produto — dependência direta do relógio sem relógio injetável/contexto temporal da mensagem — com uma limitação do harness — replay histórico sem fornecer a data-base de cada fala. As datas do artefato original continuam sendo evidência histórica do defeito e não devem ser reinterpretadas como resultados corrigidos.
@@ -213,7 +213,7 @@ Validações executadas:
 - API real, modelo `gpt-4o-mini-2024-07-18`: `export/5511956059062.json`, com referência `2026-08-25T21:29:53.000Z`, resolveu “Deixemos para quinta-feira” como `2026-08-27`; `export/557188435065.json`, com referência `2026-08-13T23:15:09.000Z`, resolveu “Amanhã à tarde” como `2026-08-14`;
 - foram feitas 5 chamadas reais durante validação e diagnóstico, totalizando 5.425 tokens e custo estimado de US$ 0,0008961.
 
-A correção trata exclusivamente a referência temporal. A separação entre data de mudança, vistoria, coleta e entrega permanece fora deste escopo, assim como o gate de relevância para mensagens promocionais.
+A correção trata exclusivamente a referência temporal. A separação entre data de mudança, vistoria, coleta e entrega permanece fora deste escopo, assim como o gate de relevância para mensagens promocionais. A própria validação desta correção (linha da tabela acima para `export/557188435065.json`) já reproduzia esse segundo defeito, independente do relógio: com a referência temporal correta (`2026-08-13T23:15:09.000Z`), “Amanhã à tarde” — resposta a uma pergunta de agendamento de **vistoria**, não de mudança — ainda resolvia para `2026-08-14` e teria preenchido `movingDate`. Esse defeito de confusão de evento foi corrigido separadamente; ver seção 6.1 acima e `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`.
 
 **STATUS: CORREÇÃO CONFIRMADA POR TESTES.** O item deixa de ser pendência crítica de relógio; os riscos semânticos de evento e relevância continuam registrados separadamente.
 
@@ -361,7 +361,7 @@ A recomendação P0.1 foi implementada e validada posteriormente. As demais reco
 ### P0 — antes de confiar em datas históricas ou executar nova bateria
 
 1. **Concluído e confirmado por testes:** tornar o relógio injetável em `extractMovingDate`/`resolveMovingDate` e fornecer o timestamp histórico no replay. Evidências e riscos residuais estão registrados na seção 6.1 e em `docs/correcoes/01_DATAS_RELATIVAS_HISTORICAS.md`.
-2. Separar explicitamente data da mudança, data da vistoria, data da coleta e data da entrega; o modelo hoje pode confundir eventos.
+2. **Concluído e confirmado por testes (22/09/2026):** separar explicitamente data da mudança, data da vistoria, data da coleta e data da entrega — o modelo podia confundir eventos e preencher `movingDate` com a data de outro evento. Evidências, causa raiz, correção e riscos residuais estão registrados em `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`. Esta correção é posterior à execução canônica `final-full-15a92cc`; os artefatos e hashes daquela execução não foram alterados.
 3. Corrigir o laço de workers para que workers desativados terminem quando a fila acabar, e adicionar teste de regressão com concorrência inicial 1 e fila completa.
 4. Escrever um marcador final atômico (`completed: true`, contagens, hashes e timestamp) somente após validar resultados e fechar o proxy.
 

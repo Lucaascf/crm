@@ -136,7 +136,7 @@ test('E. informação relevante numa mensagem humana é incorporada ao CRM', asy
     const name = body.response_format?.json_schema?.name
     if (name === 'moving_date_signals') {
       // "amanhã às 14h" -> relativeDays = 1 (ver MOVING_DATE_SIGNALS_SYSTEM_PROMPT)
-      return JSON.stringify({ weekdayName: null, period: null, relativeDays: 1, relativeWeeks: null, dayOfMonth: null, monthName: null, vague: false })
+      return JSON.stringify({ event: 'mudança', weekdayName: null, period: null, relativeDays: 1, relativeWeeks: null, dayOfMonth: null, monthName: null, vague: false })
     }
     if (name === 'client_moving_info') {
       return JSON.stringify({
@@ -181,7 +181,7 @@ test('F. sem intervenção humana: comportamento automático de ponta a ponta co
       })
     }
     if (name === 'moving_date_signals') {
-      return JSON.stringify({ weekdayName: null, period: null, relativeDays: 3, relativeWeeks: null, dayOfMonth: null, monthName: null, vague: false })
+      return JSON.stringify({ event: 'mudança', weekdayName: null, period: null, relativeDays: 3, relativeWeeks: null, dayOfMonth: null, monthName: null, vague: false })
     }
     return 'Beleza! Pode mandar as fotos e vídeos, por favor.'
   })
