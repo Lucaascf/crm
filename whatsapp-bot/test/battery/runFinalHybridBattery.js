@@ -6,6 +6,7 @@ import { loadConversations, groupIntoTurns } from './loadConversations.js'
 import { startRecordingProxy, estimateCostUsd } from '../support/recordingProxy.js'
 import { startMockOpenAi } from '../support/mockOpenAi.js'
 import { runWorkerPool } from './workerPool.js'
+import { invalidateStaleMarker, publishCompletionMarker } from './finalizationMarker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const botRoot = path.resolve(__dirname, '../..')
@@ -166,6 +167,13 @@ async function main() {
     const previous = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (previous.fingerprint !== fingerprint) throw new Error('Checkpoint pertence a outra configuração; use outro HYBRID_OUT_DIR.')
   } else atomicWrite(configPath, config)
+  // P0.4: um marcador de uma tentativa anterior (completa ou não) nunca deve
+  // ficar no caminho canônico enquanto esta execução está em andamento — se
+  // ela travar de novo, a ausência do marcador é o sinal correto de "ainda
+  // não verificado", em vez de um `completed: true` obsoleto. O conteúdo
+  // antigo é arquivado, não apagado.
+  const staleMarker = invalidateStaleMarker(outputDir)
+  if (staleMarker) console.log(`[marcador] marcador anterior arquivado em ${staleMarker}`)
 
   const records = readCheckpoint()
   const priorRecords = readCheckpoint(path.join(priorOutputDir, 'checkpoint.jsonl'))
@@ -525,6 +533,35 @@ async function main() {
     writeSummary({ completedConversations, scheduledConversations: limitedWork.length, stoppedByCost })
     await proxy.close()
   }
+
+  // P0.4: só chega até aqui se o try/catch/finally acima não relançou (ou
+  // seja, workers terminaram normalmente, o summary final foi gravado e
+  // proxy.close() não lançou). Uma parada por custo/interrupção não é
+  // tratada como falha do processo (não relança), mas também não é uma
+  // conclusão verificável — o marcador não deve afirmar completed: true.
+  if (stoppedByCost || stopRequested) {
+    console.log('[marcador] execução não concluiu todo o trabalho agendado (parada por custo/interrupção); marcador final não publicado.')
+    return
+  }
+  const expectedTurns = limitedWork.reduce((sum, { conversation }) => sum + groupIntoTurns(conversation.messages).length, 0)
+  const marker = await publishCompletionMarker({
+    outputDir,
+    fingerprint,
+    config,
+    workersEndedNormally: true,
+    proxyClosed: true,
+    checkpointPath,
+    usageLogPath,
+    summaryPath,
+    configPath,
+    resultsDir: path.join(outputDir, 'results'),
+    datasets: datasets.map((dataset) => dataset.name),
+    emptyConversationsPath: path.join(outputDir, 'empty-conversations.json'),
+    expectedConversations: limitedWork.length,
+    expectedTurns,
+    expectedLogicalCalls: expectedTurns * 2,
+  })
+  console.log(`[marcador] publicado com sucesso: ${marker.conversations.actual} conversas, ${marker.turns.actual} turnos, ${marker.logicalCalls.actual} chamadas lógicas.`)
 }
 
 main().catch((error) => {
