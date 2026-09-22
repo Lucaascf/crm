@@ -222,10 +222,16 @@ const MOVING_DATE_SIGNALS_SYSTEM_PROMPT = `Você lê o fim de uma conversa de Wh
 
 Sua única tarefa é extrair SINAIS BRUTOS do que o cliente disse — não calcule nenhuma data, só identifique o que foi dito:
 
+Considere somente as falas do Cliente para preencher os sinais. Falas da
+Empresa podem conter sugestões de datas, mas não são declarações do cliente.
+Se o cliente corrigiu ou substituiu uma data ao longo da conversa, use a
+decisão mais recente dele e descarte os sinais incompatíveis das falas
+anteriores.
+
 - "weekdayName": o dia da semana que o cliente citou (ex: cliente disse "quarta" ou "sexta-feira" → "quarta-feira" / "sexta-feira"), ou null se não citou nenhum.
 - "period": se o cliente mencionou um período relativo — "esta semana", "semana que vem" ou "semana seguinte" — em qualquer mensagem dele sobre a data (mesmo em turno anterior). Null se não mencionou período nenhum.
 - "relativeDays": se o cliente disse "daqui a N dias" ou "em N dias" (as duas formas contam igual — "daqui a 20 dias" e "em 20 dias" são a mesma coisa: relativeDays=20), esse N (número). Trate também "hoje"/"hoje mesmo" como relativeDays=0 e "amanhã" como relativeDays=1, mesmo sem a palavra "dias". NUNCA use este campo pra unidade de semana/mês (ex: "daqui a duas semanas" NÃO é relativeDays=2, é relativeWeeks=2 — preste atenção na unidade dita, não só no número). Null caso contrário.
-- "relativeWeeks": se o cliente disse "daqui a N semanas" ou "em N semanas" (as duas formas contam igual), esse N (número). Null caso contrário.
+- "relativeWeeks": somente se o cliente disse explicitamente "daqui a N semanas" ou "em N semanas" (as duas formas contam igual), esse N (número). "Semana que vem" é period="semana que vem" e relativeWeeks=null; nunca converta um período nomeado em contagem de semanas. Null caso contrário.
 - "dayOfMonth": CUIDADO — fácil de confundir com relativeDays, preste bastante atenção. "dayOfMonth" só quando o cliente está apontando um número FIXO no calendário, sempre com a palavra "dia" antes do número (ex: "dia 20", "no dia 5", "dia 20 do mês que vem"). "em N dias" / "daqui a N dias" NUNCA é dayOfMonth, mesmo quando N é um número que também poderia ser dia do calendário (ex: "em 20 dias" é relativeDays=20, NÃO dayOfMonth=20 — não existe a palavra "dia" logo antes do número ali, é "dias" depois, indicando quantidade/prazo, não uma data fixa). Null caso contrário.
 - "monthName": se junto do dia do mês o cliente disse o mês (ex: "dia 5 de outubro" → "outubro"). Null caso contrário (inclusive se não disse dayOfMonth).
 - "vague": true se o cliente só deu uma referência vaga, sem NENHUM dos sinais acima (ex: "semana que vem" sozinho sem dia, "não sei ainda", "talvez mês que vem", "ainda não decidi") — nesse caso todos os outros campos ficam null. Se ele citou weekdayName, relativeDays, relativeWeeks ou dayOfMonth, vague = false mesmo que também tenha mencionado um período vago.
@@ -236,8 +242,8 @@ Nunca invente um valor que o cliente não disse. Isso é só extração de texto
  * Resolve os sinais brutos extraídos pra uma data real — puro cálculo em
  * código, sem IA, pra não repetir o erro de pedir conta de data pro modelo.
  */
-function resolveMovingDate(signals) {
-  const today = new Date()
+function resolveMovingDate(signals, referenceDate) {
+  const today = new Date(referenceDate)
   today.setHours(0, 0, 0, 0)
 
   if (signals.relativeDays != null || signals.relativeWeeks != null) {
@@ -289,7 +295,7 @@ function resolveMovingDate(signals) {
  * período vago tipo "semana que vem" sozinho NÃO conta — fica null até ele
  * dizer o dia).
  */
-export async function extractMovingDate(messages) {
+export async function extractMovingDate(messages, referenceDate = new Date()) {
   const completion = await createCompletion({
     model: MODEL,
     messages: [
@@ -321,7 +327,7 @@ export async function extractMovingDate(messages) {
   })
 
   const signals = JSON.parse(completion.choices[0].message.content)
-  return signals.vague ? null : resolveMovingDate(signals)
+  return signals.vague ? null : resolveMovingDate(signals, referenceDate)
 }
 
 function escapeRegExp(s) {

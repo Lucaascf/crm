@@ -217,7 +217,8 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
 
     const history = await getConversationHistory(clientId)
     const extracted = await extractClientInfo(clientRecord, history)
-    const movingDate = await extractMovingDate(history)
+    const movingDateReference = history.at(-1)?.createdAt ?? new Date()
+    const movingDate = await extractMovingDate(history, movingDateReference)
 
     // Conversa em andamento de verdade — sai de "Novo contato" assim que o
     // bot começa a trabalhar o lead, pra aparecer nas seções certas do CRM.
