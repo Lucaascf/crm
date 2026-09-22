@@ -25,6 +25,8 @@ function defaultHandler(body) {
       truckAccess: null,
       vistoriaType: null,
       vistoriaResolved: false,
+      movingCancelled: false,
+      cancellationEvidence: null,
     })
   }
   if (schemaName === 'moving_date_signals') {

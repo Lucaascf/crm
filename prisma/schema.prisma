@@ -40,6 +40,14 @@ model Client {
   stairsOrElevator   String? // escada ou elevador, na origem e no destino
   truckAccess        String? // se o caminhão consegue parar na porta dos dois locais
 
+  // Cancelamento (ver docs/correcoes/05_CANCELAMENTOS_ESTRUTURADOS.md — P1.1).
+  // Escopo restrito à mudança INTEIRA: cancelamento/reagendamento de um
+  // evento específico (vistoria, uma data proposta) não marca isto — ver
+  // whatsapp-bot/src/ai.js (EXTRACTION_SYSTEM_PROMPT) para a distinção.
+  movingCancelled      Boolean   @default(false) // true só com confirmação explícita e inequívoca do cliente de que a mudança inteira foi cancelada
+  movingCancelledAt    DateTime? // quando movingCancelled passou a true pela última vez (null enquanto false)
+  cancellationEvidence String?   // trecho da fala do cliente que sustenta o valor atual de movingCancelled (cancelamento OU reativação/reagendamento explícito posterior)
+
   // Orçamento
   budgetValue Float?
   budgetNotes String?
@@ -75,6 +83,7 @@ model Client {
 
   @@index([status])
   @@index([movingDate])
+  @@index([movingCancelled])
   @@index([userId])
 }
 

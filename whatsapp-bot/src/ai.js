@@ -54,6 +54,8 @@ Regras:
 - "propertyType" só pode ser um destes valores, ou null: ${PROPERTY_TYPES.join(', ')}.
 - "vistoriaType" é "presencial" se o cliente topar uma vistoria presencial, ou "fotos" se ele preferir mandar fotos/vídeo dos itens em vez de vistoria. Null se ele ainda não escolheu.
 - "vistoriaResolved" é true assim que o cliente escolher um dos dois (presencial ou fotos/vídeo) — não precisa de data/horário pra contar como resolvido, isso quem combina é um assistente humano depois. Continua false se o assunto ainda nem foi levantado ou o cliente ainda não respondeu sobre isso.
+- "movingCancelled" é true SOMENTE quando o cliente afirma de forma explícita e inequívoca que a MUDANÇA INTEIRA foi cancelada, desistida ou não vai mais acontecer (ex: "a mudança foi cancelada", "não vou mais me mudar", "desistimos da mudança", "cancela tudo, não vou mudar mais"). NÃO marque true para: cancelamento, desmarcação ou recusa de um agendamento/data/horário específico que ainda pode ser remarcado (ex: cliente diz só "quero cancelar o agendamento" — isso é ambíguo por si só, pode significar cancelar a mudança inteira OU só a data marcada; releia o resto da conversa: se logo depois ou em seguida o cliente ou a empresa continuam tratando de uma nova data, itens, endereços ou qualquer outro assunto da MESMA mudança como se ela ainda estivesse de pé, isso é evidência de que era só a data/agendamento que foi cancelado, não a mudança — mantenha false); recusa de um horário de vistoria proposto; menção a excluir ou não levar um item específico da lista (isso é assunto de "movingNotes", não cancelamento da mudança); ou qualquer declaração vaga, incerta ou sobre a mudança de OUTRA pessoa que não é o cliente desta conversa. Em caso de dúvida genuína sobre o escopo (mudança inteira vs. só um evento/data), mantenha false — nunca marque cancelamento por presunção. Se o campo já estava true no "estado atual dos campos" e o cliente disser depois, de forma explícita, que quer remarcar/reativar/seguir com a mudança afinal, volte para false.
+- "cancellationEvidence" é o trecho (ou paráfrase bem próxima) da fala do CLIENTE que sustenta o valor atual de "movingCancelled": preencha com a frase de cancelamento quando movingCancelled=true; preencha também quando o cliente reativar/remarcar explicitamente a mudança depois de um cancelamento anterior (citando a frase de reativação, mesmo com movingCancelled=false nesse caso) — isso deixa rastreável POR QUE o valor mudou; null quando não há nada relevante a citar (cliente nunca mencionou cancelar nem reativar).
 - Nunca invente informação que não foi dita na conversa. Menção a apartamento, andar, mudança ou orçamento NÃO confirma acesso de caminhão. Fotos/áudios sem transcrição não são evidência de acesso. Um nome usado pela Empresa para se dirigir ao cliente NÃO é um apelido oferecido pelo cliente.`
 
 const REPLY_SYSTEM_PROMPT = `Você é o Luciano, atendente da Trevo Mudanças e Transportes, respondendo pelo WhatsApp da empresa.
@@ -152,6 +154,7 @@ export async function extractClientInfo(client, messages) {
     truckAccess: client.truckAccess,
     vistoriaResolved: client.vistoriaResolved,
     vistoriaType: client.vistoriaType,
+    movingCancelled: client.movingCancelled ?? false,
   }
 
   const completion = await createCompletion({
@@ -183,6 +186,8 @@ export async function extractClientInfo(client, messages) {
             truckAccess: { type: ['string', 'null'] },
             vistoriaType: { type: ['string', 'null'], enum: ['presencial', 'fotos', null] },
             vistoriaResolved: { type: 'boolean' },
+            movingCancelled: { type: 'boolean' },
+            cancellationEvidence: { type: ['string', 'null'] },
           },
           required: [
             'clientName',
@@ -196,6 +201,8 @@ export async function extractClientInfo(client, messages) {
             'truckAccess',
             'vistoriaType',
             'vistoriaResolved',
+            'movingCancelled',
+            'cancellationEvidence',
           ],
           additionalProperties: false,
         },

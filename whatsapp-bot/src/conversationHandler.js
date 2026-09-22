@@ -228,6 +228,15 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
     // conversa — nunca sobrescreve com o nome salvo no WhatsApp.
     const nameUpdate = extracted.clientName ? { name: extracted.clientName, nameConfirmed: true } : {}
 
+    // movingCancelledAt marca só a transição pra true (não fica reescrevendo
+    // a cada turno enquanto continuar cancelado) e volta a null assim que uma
+    // reativação/reagendamento explícito zera movingCancelled (ver
+    // extractionPolicy.js e docs/correcoes/05_CANCELAMENTOS_ESTRUTURADOS.md).
+    // Isto só grava o estado estruturado — não altera handoff, cooldown nem
+    // nenhuma condição de envio de mensagem do bot, que continuam adiante
+    // exatamente como antes desta correção.
+    const cancellationJustSet = !clientRecord.movingCancelled && extracted.movingCancelled
+
     const updated = await prisma.client.update({
       where: { id: clientId },
       data: {
@@ -244,6 +253,9 @@ export function createConversationHandler(waClient, { testContacts = [], botEnab
         truckAccess: extracted.truckAccess,
         vistoriaResolved: extracted.vistoriaResolved,
         vistoriaType: extracted.vistoriaType,
+        movingCancelled: extracted.movingCancelled,
+        movingCancelledAt: extracted.movingCancelled ? (cancellationJustSet ? new Date() : clientRecord.movingCancelledAt) : null,
+        cancellationEvidence: extracted.cancellationEvidence,
       },
     })
 

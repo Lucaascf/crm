@@ -42,5 +42,23 @@ export function stabilizeExtraction(client, extracted) {
     result.vistoriaResolved = true
   }
   if (!result.vistoriaType) result.vistoriaResolved = false
+
+  // Cancelamento explícito da mudança é sticky: uma vez confirmado
+  // (client.movingCancelled true), só uma reativação/reagendamento
+  // EXPLÍCITO do cliente deve reverter — nunca o modelo simplesmente
+  // "esquecer" de mencionar de novo numa rodada em que o assunto não
+  // voltou à tona (a mesma classe de risco que motivou a preservação
+  // contra null dos demais campos acima). Distinguimos os dois casos pela
+  // evidência: reativação real vem acompanhada de cancellationEvidence
+  // citando a fala de reativação (ver EXTRACTION_SYSTEM_PROMPT em ai.js);
+  // "false" sem evidência nenhuma é tratado como incerteza do modelo, não
+  // como reativação, e o estado anterior é preservado — sem impedir o
+  // cancelamento explícito nem a reativação explícita (requisitos 6 e 8
+  // da correção P1.1, docs/correcoes/05_CANCELAMENTOS_ESTRUTURADOS.md).
+  if (client.movingCancelled && !result.movingCancelled && !result.cancellationEvidence) {
+    result.movingCancelled = true
+    result.cancellationEvidence = client.cancellationEvidence ?? null
+  }
+
   return result
 }

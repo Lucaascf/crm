@@ -77,6 +77,20 @@ export default async function ClienteDetailPage({
         </div>
       </div>
 
+      {client.movingCancelled && (
+        <div className="px-4 md:px-8 mt-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:p-5">
+            <p className="text-sm font-bold text-rose-800">
+              🚫 Mudança cancelada
+              {client.movingCancelledAt ? ` em ${formatDateTime(client.movingCancelledAt)}` : ""}
+            </p>
+            {client.cancellationEvidence && (
+              <p className="text-sm text-rose-700 mt-1">“{client.cancellationEvidence}”</p>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="px-4 md:px-8 mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
         <div className="md:col-span-2 flex flex-col gap-4">
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-5">
