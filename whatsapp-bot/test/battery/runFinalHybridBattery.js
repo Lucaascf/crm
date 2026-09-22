@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { loadConversations, groupIntoTurns } from './loadConversations.js'
 import { startRecordingProxy, estimateCostUsd } from '../support/recordingProxy.js'
 import { startMockOpenAi } from '../support/mockOpenAi.js'
+import { runWorkerPool } from './workerPool.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const botRoot = path.resolve(__dirname, '../..')
@@ -505,27 +506,15 @@ async function main() {
   }
 
   try {
-    let nextIndex = 0
-    async function worker(workerId) {
-      while (!stopRequested) {
-        while (!stopRequested && workerId >= desiredConcurrency) {
-          await new Promise((resolve) => setTimeout(resolve, 250))
-        }
-        if (stopRequested) return
-        const index = nextIndex++
-        if (index >= limitedWork.length) return
-        try {
-          await processOne(limitedWork[index])
-        } catch (error) {
-          if (error instanceof CostLimitReached) {
-            stopRequested = true
-            return
-          }
-          throw error
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: maxConversationConcurrency }, (_, workerId) => worker(workerId)))
+    await runWorkerPool({
+      workerCount: maxConversationConcurrency,
+      taskCount: limitedWork.length,
+      getConcurrency: () => desiredConcurrency,
+      isStopped: () => stopRequested,
+      stop: () => { stopRequested = true },
+      runTask: (index) => processOne(limitedWork[index]),
+      isFatal: (error) => error instanceof CostLimitReached,
+    })
     stoppedByCost = stopRequested
   } catch (error) {
     if (error instanceof CostLimitReached) {

@@ -11,7 +11,7 @@ A bateria canônica terminou funcionalmente: foram consolidados **6.847/6.847 tu
 
 O custo acumulado oficial, incluindo a execução anterior incorporada pelo harness, foi **US$ 3,9394467**, abaixo do teto de US$ 7,50. A execução atual registrou 13.395 tentativas HTTP: 12.197 respostas 200 e 1.198 respostas 429. Somados os logs incorporados da execução anterior, foram 16.875 tentativas preservadas, com 14.267 respostas 200 e 2.608 respostas 429.
 
-Não há evidência de chamada em voo ou resultado pendente. A última tentativa terminou em HTTP 200 às `2026-09-19T16:59:30.879Z`; os artefatos ficaram sem alteração por aproximadamente uma hora antes da verificação final. O processo continuava vivo apenas por um defeito no laço de workers ociosos do harness. Após confirmar a completude dos resultados e a ausência de atividade, ele foi encerrado com `Ctrl-C`. Nenhum artefato foi perdido ou reescrito.
+Não há evidência de chamada em voo ou resultado pendente. A última tentativa terminou em HTTP 200 às `2026-09-19T16:59:30.879Z`; os artefatos ficaram sem alteração por aproximadamente uma hora antes da verificação final. O processo continuava vivo apenas por um defeito no laço de workers ociosos do harness. Após confirmar a completude dos resultados e a ausência de atividade, ele foi encerrado com `Ctrl-C`. Nenhum artefato foi perdido ou reescrito. **Nota adicionada em 22/09/2026:** esse defeito de encerramento (item P0.3) foi corrigido posteriormente a esta execução — ver seção 7.1 e `docs/correcoes/03_TRAVAMENTO_WORKERS_OCIOSOS.md`. A correção é posterior à execução canônica `final-full-15a92cc`; nada nesta seção foi reescrito para sugerir que o processo original encerrou normalmente — ele precisou de `Ctrl-C`, exatamente como descrito acima.
 
 O resultado estrutural é forte, mas **não equivale a acurácia semântica**. A leitura dirigida dos artefatos encontrou problemas reais: datas relativas históricas resolvidas contra o relógio da reprodução (já corrigido — ver seção 6.1), campos preenchidos sem suporte textual suficiente, confusão entre data de vistoria/coleta/entrega e data da mudança (já corrigido — ver seção 6.1 e `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`), e cancelamentos sem representação estruturada. A política de estabilização eliminou perda sintática de valores conhecidos — houve zero transição de valor não nulo para `null` —, mas isso também pode conservar informação obsoleta quando há exclusão ou cancelamento.
 
@@ -301,12 +301,18 @@ while (!stopRequested && workerId >= desiredConcurrency) {
 
 Eles não verificam `nextIndex >= limitedWork.length` enquanto estão desativados. Por isso, `Promise.all` nunca resolveu e o bloco `finally` não foi executado. O processo não estava consolidando artefatos; estava ocioso. O encerramento seguro ocorreu somente após confirmar 885/885 resultados completos, ausência de atividade por cerca de uma hora e último HTTP 200.
 
-Impactos:
+Impactos observados nesta execução histórica (não alterados retroativamente por esta nota):
 
 - processo não saiu sozinho;
 - summary não recebeu os campos finais de encerramento;
 - `proxy.close()` não foi alcançado pelo fluxo normal;
 - foi necessário `Ctrl-C`, com exit code não zero, apesar do trabalho funcional completo.
+
+**Correção concluída em 22/09/2026 (posterior a esta execução).** O laço de workers foi extraído para `whatsapp-bot/test/battery/workerPool.js` e corrigido: um worker desativado (`workerId >= desiredConcurrency`) passou a verificar, a cada ciclo de espera, se a fila já foi totalmente distribuída e, nesse caso, retorna normalmente em vez de aguardar indefinidamente por um aumento de concorrência que pode não vir. `runFinalHybridBattery.js` passou a delegar o pool de workers a esse módulo, preservando integralmente o checkpoint, o limiter de TPM/RPM, o custo, a retomada e o escalonamento adaptativo.
+
+O defeito foi reproduzido antes da correção com uma fila sintética pequena (5 itens), concorrência inicial 1 e 10 workers, copiando literalmente o laço então vigente: a fila foi 100% consumida, mas o processo precisou ser morto por timeout externo (`exit code 137`), sem sair sozinho. Depois da correção, o mesmo cenário termina sozinho com `exit code 0`. Um teste de integração adicional, com o pool real rodando em processo separado (sem mock no controle dos workers), fila sintética e respostas de API simuladas, confirma encerramento automático com `exit code 0`, todas as tarefas persistidas exatamente uma vez e o bloco `finally` (summary final + fechamento do proxy) alcançado normalmente. Validação: 11 testes unitários + 3 testes de integração, todos passando; suíte completa do bot (47/47), incluindo as correções P0.1 e P0.2, sem regressão. Detalhes completos, evidências e riscos residuais em `docs/correcoes/03_TRAVAMENTO_WORKERS_OCIOSOS.md`.
+
+**Esta execução histórica (`final-full-15a92cc`) não foi re-executada nem teve seu encerramento retroativamente reescrito: ela precisou de `Ctrl-C`, exatamente como descrito acima; a correção vale apenas para execuções futuras do harness.**
 
 ### 7.2 Rastreabilidade incompleta de tentativas antigas
 
@@ -356,13 +362,13 @@ Os 429 não registraram tokens cobrados. Não houve 400, 401, 403, 404, 408, 409
 
 ## 10. Recomendações priorizadas
 
-A recomendação P0.1 foi implementada e validada posteriormente. As demais recomendações continuam pendentes.
+As recomendações P0.1, P0.2 e P0.3 foram implementadas e validadas posteriormente. As demais recomendações continuam pendentes.
 
 ### P0 — antes de confiar em datas históricas ou executar nova bateria
 
 1. **Concluído e confirmado por testes:** tornar o relógio injetável em `extractMovingDate`/`resolveMovingDate` e fornecer o timestamp histórico no replay. Evidências e riscos residuais estão registrados na seção 6.1 e em `docs/correcoes/01_DATAS_RELATIVAS_HISTORICAS.md`.
 2. **Concluído e confirmado por testes (22/09/2026):** separar explicitamente data da mudança, data da vistoria, data da coleta e data da entrega — o modelo podia confundir eventos e preencher `movingDate` com a data de outro evento. Evidências, causa raiz, correção e riscos residuais estão registrados em `docs/correcoes/02_SEPARACAO_DATAS_EVENTOS.md`. Esta correção é posterior à execução canônica `final-full-15a92cc`; os artefatos e hashes daquela execução não foram alterados.
-3. Corrigir o laço de workers para que workers desativados terminem quando a fila acabar, e adicionar teste de regressão com concorrência inicial 1 e fila completa.
+3. **Concluído e confirmado por testes (22/09/2026):** corrigir o laço de workers para que workers desativados terminem quando a fila acabar, e adicionar teste de regressão com concorrência inicial 1 e fila completa. Evidências, causa raiz, correção, testes e riscos residuais estão registrados na seção 7.1 e em `docs/correcoes/03_TRAVAMENTO_WORKERS_OCIOSOS.md`. Esta correção é posterior à execução canônica `final-full-15a92cc`; os artefatos e hashes daquela execução não foram alterados, e seu encerramento histórico via `Ctrl-C` permanece registrado como tal.
 4. Escrever um marcador final atômico (`completed: true`, contagens, hashes e timestamp) somente após validar resultados e fechar o proxy.
 
 ### P1 — segurança semântica do CRM

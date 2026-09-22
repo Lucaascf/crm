@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --import ./test/support/setup.js --test --test-force-exit test/*.test.js"
+    "test": "node --import ./test/support/setup.js --test --test-force-exit test/*.test.js test/battery/*.test.js"
   },
   "keywords": [],
   "author": "",
